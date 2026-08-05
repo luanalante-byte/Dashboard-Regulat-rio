@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KPI Regulatórios — Rascunho de Novos Indicadores</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root{--roxo:#7B5FC7;--roxo2:#9D8AD6;--roxo3:#C4B8E8;--escuro:#2B1E5C;--verde:#8FD6A0;--amarelo:#F5C664;--verm:#E8788A;--cinza:#F4F2FA;--txt:#3A3550;}
+*{box-sizing:border-box;margin:0;padding:0;font-family:'Segoe UI',system-ui,sans-serif;}
+body{background:var(--cinza);color:var(--txt);padding:24px;}
+h1{font-size:22px;color:var(--escuro);}
+.sub{font-size:13px;color:#7a7593;margin:4px 0 18px;}
+.badge{display:inline-block;background:var(--amarelo);color:#6b4d00;font-size:11px;font-weight:600;padding:3px 10px;border-radius:12px;margin-left:8px;vertical-align:middle;}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:20px;}
+.kpi{background:#fff;border-radius:12px;padding:16px;box-shadow:0 2px 8px rgba(43,30,92,.08);}
+.kpi .v{font-size:26px;font-weight:700;color:var(--roxo);}
+.kpi .l{font-size:12px;color:#7a7593;margin-top:4px;line-height:1.3;}
+.grid{display:grid;grid-template-columns:repeat(12,1fr);gap:14px;}
+.card{background:#fff;border-radius:12px;padding:18px;box-shadow:0 2px 8px rgba(43,30,92,.08);}
+.card h2{font-size:15px;color:var(--escuro);margin-bottom:2px;}
+.card .hint{font-size:11px;color:#9a95b5;margin-bottom:12px;}
+.c5{grid-column:span 5;}.c6{grid-column:span 6;}.c7{grid-column:span 7;}.c12{grid-column:span 12;}
+@media(max-width:1000px){.c5,.c6,.c7{grid-column:span 12;}}
+.chartbox{position:relative;height:280px;}
+.chartbox.sm{height:230px;}
+table{width:100%;border-collapse:collapse;font-size:12.5px;}
+th{text-align:left;color:#7a7593;font-weight:600;padding:6px 8px;border-bottom:2px solid var(--cinza);position:sticky;top:0;background:#fff;}
+td{padding:6px 8px;border-bottom:1px solid var(--cinza);}
+.tag{padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;white-space:nowrap;}
+.t-verm{background:#FBE3E7;color:#a83248;}
+.t-amar{background:#FCF0D8;color:#8a6a14;}
+.scroll{max-height:300px;overflow-y:auto;}
+.filtro{display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap;}
+.filtro label{font-size:12px;color:#7a7593;font-weight:600;}
+.filtro select,.filtro input{padding:6px 12px;border:1px solid var(--roxo3);border-radius:8px;background:#fff;color:var(--txt);font-size:13px;}
+.filtro select{cursor:pointer;}
+.filtro input{flex:1;min-width:180px;}
+.pill{display:inline-block;padding:5px 12px;border-radius:16px;font-size:12px;cursor:pointer;background:var(--cinza);color:var(--txt);border:1px solid transparent;}
+.pill.on{background:var(--roxo);color:#fff;}
+.pills{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;}
+.foot{margin-top:22px;font-size:11px;color:#9a95b5;line-height:1.5;}
+</style>
+</head>
+<body>
+<h1>KPI Regulatórios — Novos Indicadores <span class="badge">RASCUNHO / PREVIEW</span></h1>
+<div class="sub">Fonte: LISTA MESTRE DE PRODUTOS - PRONUTRITION.xlsx · Gerado em 05/08/2026 · Clientes/laboratórios/embalagens normalizados automaticamente</div>
+
+<div class="kpis" id="kpicards"></div>
+
+<div class="grid">
+
+  <div class="card c12">
+    <h2>Documentações — quantidade e SLA por tipo</h2>
+    <div class="hint">Controle de Documentos · Dizeres de Rotulagem, Correção de Arte, Homologação de MP, Avaliação de Risco e Especificação Técnica</div>
+    <div class="filtro">
+      <label for="fMes">Mês:</label>
+      <select id="fMes"></select>
+      <span class="hint" id="docResumo" style="margin:0"></span>
+    </div>
+    <div class="grid" style="gap:14px">
+      <div class="c6"><div class="hint">Quantidade de documentos</div><div class="chartbox sm"><canvas id="chDocQtd"></canvas></div></div>
+      <div class="c6"><div class="hint">SLA médio (dias) — menor é melhor</div><div class="chartbox sm"><canvas id="chDocSla"></canvas></div></div>
+    </div>
+  </div>
+
+  <div class="card c12">
+    <h2>Revisões de arte por produto/cliente</h2>
+    <div class="hint">Controle de Documentos · Correção de Arte · quantas vezes a mesma arte (produto + cliente) precisou ser revisada · <span id="revResumo"></span></div>
+    <div class="grid" style="gap:14px">
+      <div class="c5"><div class="hint">Distribuição — nº de revisões por arte</div><div class="chartbox sm"><canvas id="chRevDist"></canvas></div></div>
+      <div class="c7">
+        <div class="hint">Top 15 artes com mais revisões</div>
+        <div class="scroll" style="max-height:230px">
+          <table id="tbRevArte"><thead><tr><th>Produto</th><th>Cliente</th><th>Revisões</th><th>Período</th></tr></thead><tbody></tbody></table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card c12">
+    <h2>Gastos com produtos de catálogo — fluxo de caixa</h2>
+    <div class="hint">Gastos Catálogo · parcelas de estudos de estabilidade por Data de Pagamento, empilhado por laboratório (R$)</div>
+    <div class="chartbox"><canvas id="chFluxo"></canvas></div>
+  </div>
+
+  <div class="card c12">
+    <h2>Gastos com clientes — estudos de estabilidade</h2>
+    <div class="hint">Gastos Reais · lançamentos por cliente, fora do orçamento de catálogo (Cliente = Pronutrition) · <span id="gcResumo"></span></div>
+    <div class="grid" style="gap:14px">
+      <div class="c6"><div class="chartbox sm"><canvas id="chGastosCli"></canvas></div></div>
+      <div class="c6">
+        <div class="scroll" style="max-height:230px">
+          <table id="tbGastosCli"><thead><tr><th>Cliente</th><th>Laboratório</th><th>Data pgto.</th><th>Valor</th><th>Descrição</th></tr></thead><tbody></tbody></table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card c12">
+    <h2>Notificações vigentes (anuídas)</h2>
+    <div class="hint">Gestão de Notificações · <b id="nvResumo"></b> · distribuição por dimensão</div>
+    <div class="pills" id="nvPills"></div>
+    <div class="chartbox"><canvas id="chNotifVig"></canvas></div>
+  </div>
+
+  <div class="card c12">
+    <h2>Notificações vigentes — por produto</h2>
+    <div class="hint">Quantidade de sabores e pesos líquidos disponíveis notificados por produto</div>
+    <div class="kpis" style="margin-bottom:14px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));">
+      <div class="kpi"><div class="v" id="nvProdUnicos"></div><div class="l">Produtos distintos</div></div>
+      <div class="kpi"><div class="v" id="nvSaboresUnicos"></div><div class="l">Sabores distintos notificados (somando todos os produtos)</div></div>
+      <div class="kpi"><div class="v" id="nvPesosUnicos"></div><div class="l">Pesos líquidos distintos notificados</div></div>
+    </div>
+    <div class="scroll">
+      <table id="tbPorProduto">
+        <thead><tr><th>Produto</th><th>Nº de sabores</th><th>Sabores disponíveis</th><th>Nº de pesos</th><th>Pesos disponíveis</th><th>Notificações</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card c12">
+    <h2>Notificações vigentes — detalhamento</h2>
+    <div class="hint">Produto, sabor, validade e nº de processo · <span id="nvTabResumo"></span></div>
+    <div class="filtro"><input id="nvBusca" type="text" placeholder="Buscar por produto, marca, cliente ou nº de processo..."></div>
+    <div class="scroll">
+      <table id="tbNotifVig">
+        <thead><tr><th>Produto</th><th>Sabor</th><th>Marca</th><th>Cliente</th><th>Validade</th><th>Vigência</th><th>Nº processo</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card c12">
+    <h2>Funil de estabilidade — SKUs por tempo de estudo</h2>
+    <div class="hint">Controle de Estabilidade · exclui linhas de "Acompanhamento"</div>
+    <div class="chartbox sm"><canvas id="chTempos"></canvas></div>
+  </div>
+
+  <div class="card c12">
+    <h2>Próximos laudos previstos</h2>
+    <div class="hint"><span id="nproxResumo"></span> laudos com previsão futura e ainda não recebidos, ordenados por urgência</div>
+    <div class="scroll">
+      <table id="tbProxLaudos"><thead><tr><th>Produto</th><th>Laboratório</th><th>Tempo do estudo</th><th>Previsão de laudo</th></tr></thead><tbody></tbody></table>
+    </div>
+  </div>
+
+  <div class="card c6">
+    <h2>Resultado de estabilidade por laboratório</h2>
+    <div class="hint">% de laudos por status — taxa de reanálise/reprovação</div>
+    <div class="chartbox"><canvas id="chQual"></canvas></div>
+  </div>
+  <div class="card c6">
+    <h2>Produtos com reanálise ou reprovação</h2>
+    <div class="hint">Formulações que exigem atenção</div>
+    <div class="scroll"><table id="tbProb"><thead><tr><th>Produto</th><th>Reanálises</th><th>Reprovações</th></tr></thead><tbody></tbody></table></div>
+  </div>
+
+</div>
+
+<div class="foot">Rascunho para validação de layout e indicadores. No dashboard definitivo, os dados serão atualizados automaticamente via skill (novos inputs → recálculo → regeneração deste HTML). "Notificações vigentes" considera registros com status ANUÍDO. Dois registros de Dizeres de Rotulagem com SLA inválido (sem Data de Saída, gerando valor negativo extremo) foram excluídos do cálculo de SLA médio, mas continuam contados na quantidade.</div>
+
+<script>
+const D = {"cotacoes": {"status": {"Não": 32, "Sim": 16, "Em Análise": 87}, "lead_medio_sol_rec": 7.9, "lead_n": 131, "valores": {"Não": 1076336.6, "Sim": 114614.14, "Em Análise": 2931164.65}}, "fluxo": {"meses": {"2025-07": {"CLS": 7040.0}, "2025-10": {"CLS": 7040.0}, "2026-01": {"CEIMIC": 25639.46, "CLS": 7040.0}, "2026-02": {"CQA": 7111.5, "CEIMIC": 42201.96}, "2026-03": {"CEIMIC": 16014.46}, "2026-04": {"CEIMIC": 30264.46}, "2026-05": {"CQA": 2426.5, "CEIMIC": 13714.46}, "2026-06": {"CQA": 18986.5, "CEIMIC": 5339.46}, "2026-07": {"CEIMIC": 11242.79, "CLS": 7040.0}, "2026-08": {"CEIMIC": 18270.71, "CQA": 2415.0}, "2026-09": {"CEIMIC": 10676.96}, "2026-10": {"CEIMIC": 15176.96}, "2026-11": {"CQA": 2426.5, "CEIMIC": 9526.96}, "2026-12": {"CQA": 12705.0, "CEIMIC": 7964.46}, "2027-01": {"CEIMIC": 5339.46, "CLS": 7040.0}, "2027-02": {"CEIMIC": 18270.71, "CQA": 2415.0}, "2027-03": {"CEIMIC": 10676.96}, "2027-04": {"CEIMIC": 17801.96}, "2027-05": {"CEIMIC": 9526.96}, "2027-06": {"CEIMIC": 5339.46}, "2027-07": {"CEIMIC": 4686.13, "CLS": 7040.0}, "2027-08": {"CEIMIC": 17617.38}, "2027-09": {"CEIMIC": 9370.3}, "2027-10": {"CEIMIC": 13332.63}, "2027-11": {"CEIMIC": 4187.5}}, "labs": ["CEIMIC", "CLS", "CQA"]}, "estab": {"tempos": {"T12": 41, "T18": 30, "T24": 27, "T6 Longa": 28, "T6 Acelerado": 29, "T0": 22, "T3 Longa": 20, "T3 Acelerado": 20, "T3 Acelerada": 1, "T9": 1, "T10": 1, "T11": 1, "T14": 1, "T15": 1, "T16": 1}, "proximos_laudos": [{"produto": "Talita Tozzo - Calm Gut - Pote 175g", "lab": "CEIMIC", "tempo": "T12", "previsao": "2026-08-14"}, {"produto": "Inovacao -  Body Gel", "lab": "CBO", "tempo": "T3 Acelerado", "previsao": "2026-08-20"}, {"produto": "Creatina aromatizada - IFP0007.T014 - Pote 27", "lab": "CEIMIC", "tempo": "T12", "previsao": "2026-08-28"}, {"produto": "Gel carbo e caf Frutas Verm IFGE0024.T003 - 1", "lab": "CEIMIC", "tempo": "T12", "previsao": "2026-08-30"}, {"produto": "Humana - WPI - Lata 300g", "lab": "EUROFINS", "tempo": "T12", "previsao": "2026-09-01"}, {"produto": "Dr. Simi - Cápsula BCAA + Vit B6 - Pote 120 C", "lab": "CQA", "tempo": "T18", "previsao": "2026-09-10"}, {"produto": "Creatina stick - unidade 3g", "lab": "CEIMIC", "tempo": "T12", "previsao": "2026-09-12"}, {"produto": "Creatina Beauty - IFP0011.T003 - Pote 135g", "lab": "CEIMIC", "tempo": "T12", "previsao": "2026-09-12"}, {"produto": "Colágeno Verisol Amora - IFP0048.T010 - Displ", "lab": "CEIMIC", "tempo": "T12", "previsao": "2026-09-12"}, {"produto": "Eletrólitos - Abacaxi c Hor - Stick", "lab": "CEIMIC", "tempo": "T12", "previsao": "2026-09-12"}, {"produto": "Fepase - We on Orange Vanilla - Display (10un", "lab": "CEIMIC", "tempo": "T12", "previsao": "2026-09-13"}, {"produto": "Fepase - We on Maça Verde c/ Canela - Display", "lab": "CEIMIC", "tempo": "T12", "previsao": "2026-09-13"}, {"produto": "Decatlhon - Gel Energy Limão - Sachê 40g", "lab": "CEIMIC", "tempo": "T6 Longa", "previsao": "2026-09-15"}, {"produto": "Decatlhon - Gel Energy Limão - Sachê 40g", "lab": "CEIMIC", "tempo": "T6 Acelerado", "previsao": "2026-09-15"}, {"produto": "Decatlhon - Gel Energy Salted Caramelo - Sach", "lab": "CEIMIC", "tempo": "T6 Longa", "previsao": "2026-09-15"}], "n_proximos": 109}, "qualidade_lab": {"CQA": {"Ap com Ressalvas": 2, "Aprovado": 5, "Reprovado": 1}, "CLS": {"Aprovado": 2}, "CEIMIC": {"Ap com Ressalvas": 7, "Aprovado": 26, "Reanálise": 15, "Reprovado": 3}, "EUROFINS": {"Aprovado": 2, "Ap com Ressalvas": 1}}, "prob_prod": {"The Mens - Creatina 500g": {"Aprovado": 1, "Reprovado": 1}, "Decatlhon - Gel Energy Salted Caramelo - Sachê 40g": {"Reanálise": 1}, "Decatlhon - Gel Ultra Caramelo - Sachê 40g": {"Reanálise": 1}, "Creatina Beauty - IFP0011.T003 - Pote 135g": {"Reanálise": 2}, "Colágeno Verisol Amora - IFP0048.T010 - Display c/30 300g": {"Reanálise": 2}, "Eletrólitos - Abacaxi c Hor - Stick": {"Reanálise": 2}, "PRÉ TREINO II - IFP0119.T025 Pote 300g Manga": {"Reanálise": 2}, "Eletrólitos - Maçã Verde - IFP0074.T008 - Pote 180g": {"Aprovado": 2, "Reanálise": 2}, "Cápsula Antioxidante - IFC0029.T0001 -  pote c/ 30 caps": {"Reanálise": 2}, "PRÉ TREINO - IFP0119.T023 - Display com 30un": {"Reanálise": 1, "Aprovado": 2}, "Creatina com Dióxido de Silício - Soldiers": {"Reprovado": 1}, "Creatina com Dióxido de Silício (Monohidratada)  - Growth": {"Reprovado": 1}, "Creatina com Dióxido de Silício (Creapure) - Growth": {"Reprovado": 1}}, "docs": {"meses": {"fevereiro": {"Avaliação de Risco": {"qtd": 9, "sla": 1.22}, "Dizeres de Rotulagem": {"qtd": 27, "sla": 2.52}, "Correção de Arte": {"qtd": 14, "sla": 1.14}, "Homologação de MP": {"qtd": 6, "sla": 6.0}, "Especificação Técnica": {"qtd": 2, "sla": 1.0}}, "março": {"Dizeres de Rotulagem": {"qtd": 37, "sla": 1.59}, "Correção de Arte": {"qtd": 56, "sla": 1.45}, "Especificação Técnica": {"qtd": 3, "sla": 0.0}, "Homologação de MP": {"qtd": 7, "sla": 12.17}}, "abril": {"Correção de Arte": {"qtd": 19, "sla": 2.16}, "Dizeres de Rotulagem": {"qtd": 25, "sla": 2.6}, "Avaliação de Risco": {"qtd": 4, "sla": 2.0}, "Especificação Técnica": {"qtd": 3, "sla": 0.0}, "Homologação de MP": {"qtd": 2, "sla": 25.0}}, "maio": {"Correção de Arte": {"qtd": 21, "sla": 0.95}, "Dizeres de Rotulagem": {"qtd": 28, "sla": 2.32}, "Especificação Técnica": {"qtd": 2, "sla": 0.0}, "Homologação de MP": {"qtd": 3, "sla": 28.33}}, "janeiro": {"Correção de Arte": {"qtd": 3, "sla": 2.0}, "Dizeres de Rotulagem": {"qtd": 6, "sla": 3.67}}, "junho": {"Correção de Arte": {"qtd": 25, "sla": 1.92}, "Especificação Técnica": {"qtd": 10, "sla": 3.7}, "Dizeres de Rotulagem": {"qtd": 20, "sla": 2.25}, "Homologação de MP": {"qtd": 3, "sla": 5.67}}, "julho": {"Correção de Arte": {"qtd": 37, "sla": 1.27}, "Dizeres de Rotulagem": {"qtd": 37, "sla": 3.97}, "Homologação de MP": {"qtd": 4, "sla": 10.25}}, "sem data": {"Homologação de MP": {"qtd": 2, "sla": 0.0}, "Dizeres de Rotulagem": {"qtd": 6, "sla": 0.0}}, "agosto": {"Dizeres de Rotulagem": {"qtd": 2, "sla": 2.0}, "Correção de Arte": {"qtd": 10, "sla": 0.0}}}, "ordem": ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "sem data"], "tipos": ["Dizeres de Rotulagem", "Correção de Arte", "Homologação de MP", "Avaliação de Risco", "Especificação Técnica"]}, "notif_vig": {"total": 90, "produtos": 19, "embalagem": [["Sachê Metalizado", 47], ["Pote PEAD", 37], ["Pote PET", 3], ["Pouch", 2], ["Lata", 1]], "marca": [["Pronutrition", 20], ["Inspire Nutrition", 6], ["Dazz", 5], ["Ult", 5], ["Fuselabs", 5], ["Lavitan", 3], ["Lavitan Carbogel Repositor Energético", 3], ["Hack", 3], ["Pup Gel", 3], ["Emana", 3], ["Outros", 34]], "cliente": [["Pronutrition", 22], ["Cimed", 7], ["Way", 6], ["Bemol", 5], ["Richflow", 5], ["Fuselabs", 5], ["Hack", 3], ["Farmácia Principio Ativa", 3], ["Piracanjuba", 3], ["On Cells", 2], ["Outros", 29]], "peso": [["40 g", 45], ["300 g", 25], ["150 g", 6], ["525 g", 3], ["900 g", 3], ["400 g", 2], ["220 g", 1], ["100 g", 1], ["600 g", 1], ["500 g", 1], ["35 g", 1], ["20 g", 1]], "lista": [{"produto": "Acalma com gaba", "sabor": "Pera e mel", "embalagem": "Pote PEAD", "peso": "150 g", "marca": "Pronutrition", "cliente": "Pronutrition", "validade_meses": 12, "data_vigencia": "2025-09-17", "processo": "25351166643202522"}, {"produto": "Acalma com gaba", "sabor": "Pera e mel", "embalagem": "Pote PEAD", "peso": "150 g", "marca": "Noova Zen", "cliente": "Noova", "validade_meses": 12, "data_vigencia": "2025-09-17", "processo": "25351166643202522"}, {"produto": "Acalma com gaba", "sabor": "Pera e mel", "embalagem": "Pote PEAD", "peso": "150 g", "marca": "On Cells", "cliente": "On Cells", "validade_meses": 12, "data_vigencia": "2025-09-17", "processo": "25351166643202522"}, {"produto": "Colágeno Verisol com ácido hialurônico (com zinco)", "sabor": "Abacaxi com Hortelã", "embalagem": "Pote PEAD", "peso": "300 g", "marca": "Pronutrition", "cliente": "Pronutrition", "validade_meses": 18, "data_vigencia": "2025-02-07", "processo": "25351019184202599"}, {"produto": "Colágeno Verisol com ácido hialurônico (com zinco)", "sabor": "Maçã Verde", "embalagem": "Pote PEAD", "peso": "300 g", "marca": "Pronutrition", "cliente": "Pronutrition", "validade_meses": 18, "data_vigencia": "2025-02-07", "processo": "25351019184202599"}, {"produto": "Colágeno Verisol com ácido hialurônico (sem zinco)", "sabor": "Abacaxi com Hortelã", "embalagem": "Pote PEAD", "peso": "300 g", "marca": "Lavitan Milimetric Colageno Hidrolisado", "cliente": "Cimed", "validade_meses": 18, "data_vigencia": "2025-02-17", "processo": "'25351023788202530"}, {"produto": "Colágeno Verisol com ácido hialurônico (sem zinco)", "sabor": "Abacaxi com Hortelã", "embalagem": "Pote PEAD", "peso": "300 g", "marca": "Lavitan", "cliente": "Cimed", "validade_meses": 18, "data_vigencia": "2025-02-17", "processo": "'25351023788202530"}, {"produto": "Colágeno Verisol com ácido hialurônico (sem zinco)", "sabor": "Amora", "embalagem": "Pote PEAD", "peso": "220 g", "marca": "Pronutrition", "cliente": "Pronutrition", "validade_meses": 18, "data_vigencia": "2025-07-29", "processo": "25351130241202590"}, {"produto": "Colágeno Verisol com ácido hialurônico (sem zinco)", "sabor": "Cranberry", "embalagem": "Pote PEAD", "peso": "300 g", "marca": "Pró Beauty", "cliente": "Prócapz", "validade_meses": 18, "data_vigencia": "2025-07-29", "processo": "25351130241202590"}, {"produto": "Colágeno Verisol com ácido hialurônico (sem zinco)", "sabor": "Cranberry", "embalagem": "Pote PEAD", "peso": "300 g", "marca": "Vitaree", "cliente": "Vitaree", "validade_meses": 18, "data_vigencia": "2025-07-29", "processo": "25351130241202590"}, {"produto": "Colágeno Verisol com ácido hialurônico (sem zinco)", "sabor": "Frutas Vermelhas", "embalagem": "Pote PEAD", "peso": "300 g", "marca": "Glemosa", "cliente": "Glemosa", "validade_meses": 18, "data_vigencia": "2025-07-29", "processo": "25351130241202590"}, {"produto": "Colágeno Verisol com ácido hialurônico (sem zinco)", "sabor": "Hibisco com Limão", "embalagem": "Pote PEAD", "peso": "300 g", "marca": "Lavitan", "cliente": "Cimed", "validade_meses": 18, "data_vigencia": "2025-02-17", "processo": "'25351023788202530"}, {"produto": "Colágeno Verisol com ácido hialurônico (sem zinco)", "sabor": "Limão", "embalagem": "Pote PEAD", "peso": "300 g", "marca": "Dazz", "cliente": "Bemol", "validade_meses": 18, "data_vigencia": "2025-07-29", "processo": "25351130241202590"}, {"produto": "Colágeno Verisol com ácido hialurônico (sem zinco)", "sabor": "Maçã Verde", "embalagem": "Pote PEAD", "peso": "300 g", "marca": "Lavitan", "cliente": "Cimed", "validade_meses": 18, "data_vigencia": "2025-02-17", "processo": "'25351023788202530"}, {"produto": "Colágeno Verisol com ácido hialurônico (sem zinco)", "sabor": "Pêssego", "embalagem": "Pote PEAD", "peso": "300 g", "marca": "Dazz", "cliente": "Bemol", "validade_meses": 18, "data_vigencia": "2025-07-29", "processo": "25351130241202590"}, {"produto": "Creatina", "sabor": "Neutro", "embalagem": "Pote PEAD", "peso": "150 g", "marca": "Pronutrition", "cliente": "Pronutrition", "validade_meses": 24, "data_vigencia": "2024-11-19", "processo": "25351443054202492"}, {"produto": "Creatina", "sabor": "Neutro", "embalagem": "Pote PEAD", "peso": "100 g", "marca": "Dazz", "cliente": "Bemol", "validade_meses": 24, "data_vigencia": "2024-11-19", "processo": "25351443054202492"}, {"produto": "Creatina", "sabor": "Neutro", "embalagem": "Pote PEAD", "peso": "300 g", "marca": "Dazz", "cliente": "Bemol", "validade_meses": 24, "data_vigencia": "2024-11-19", "processo": "25351443054202492"}, {"produto": "Creatina", "sabor": "Neutro", "embalagem": "Pote PEAD", "peso": "300 g", "marca": "Inspire Nutrition", "cliente": "Way", "validade_meses": 24, "data_vigencia": "2024-11-19", "processo": "25351443054202492"}, {"produto": "Creatina", "sabor": "Neutro", "embalagem": "Pote PEAD", "peso": "300 g", "marca": "Provitalli", "cliente": "Provitalli", "validade_meses": 24, "data_vigencia": "2024-11-19", "processo": "25351443054202492"}, {"produto": "Creatina", "sabor": "Neutro", "embalagem": "Pote PEAD", "peso": "300 g", "marca": "We On", "cliente": "Fepase", "validade_meses": 24, "data_vigencia": "2024-11-19", "processo": "25351443054202492"}, {"produto": "Creatina", "sabor": "Neutro", "embalagem": "Pote PEAD", "peso": "300 g", "marca": "Inkanto", "cliente": "Inkanto", "validade_meses": 24, "data_vigencia": "2024-11-19", "processo": "25351443054202492"}, {"produto": "Creatina", "sabor": "Neutro", "embalagem": "Pote PEAD", "peso": "150 g", "marca": "Inkanto", "cliente": "Inkanto", "validade_meses": 24, "data_vigencia": "2024-11-19", "processo": "25351443054202492"}, {"produto": "Creatina", "sabor": "Neutro", "embalagem": "Pote PEAD", "peso": "300 g", "marca": "Sunrize", "cliente": "Sunrize", "validade_meses": 24, "data_vigencia": "2024-11-19", "processo": "25351443054202492"}, {"produto": "Creatina", "sabor": "Neutro", "embalagem": "Pote PEAD", "peso": "150 g", "marca": "Atleta Up", "cliente": "Sunset Sports", "validade_meses": 24, "data_vigencia": "2024-11-19", "processo": "25351443054202492"}, {"produto": "Creatina", "sabor": "Neutro", "embalagem": "Pote PEAD", "peso": "600 g", "marca": "Inspire Nutrition", "cliente": "Way", "validade_meses": 24, "data_vigencia": "2024-11-19", "processo": "25351443054202492"}, {"produto": "Creatina", "sabor": "Neutro", "embalagem": "Pote PEAD", "peso": "300 g", "marca": "Vitre", "cliente": "Vitre", "validade_meses": 24, "data_vigencia": "2024-11-19", "processo": "25351443054202492"}, {"produto": "Creatina", "sabor": "Neutro", "embalagem": "Pouch", "peso": "300 g", "marca": "Pronutrition", "cliente": "Pronutrition", "validade_meses": 18, "data_vigencia": "2025-02-24", "processo": "25351443054202492"}, {"produto": "Creatina", "sabor": "Neutro", "embalagem": "Pouch", "peso": "500 g", "marca": "Pronutrition", "cliente": "Pronutrition", "validade_meses": 18, "data_vigencia": "2025-02-24", "processo": "25351443054202492"}, {"produto": "Gel Antioxidante", "sabor": "Açaí com mirtilo", "embalagem": "Sachê Metalizado", "peso": "40 g", "marca": "Pronutrition - Resveragel", "cliente": "Pronutrition", "validade_meses": 10, "data_vigencia": "2026-02-26", "processo": "25351035834202624"}, {"produto": "Gel Carboidrato Simples", "sabor": "Caramelo", "embalagem": "Sachê Metalizado", "peso": "40 g", "marca": "Lavitan Carbogel Repositor Energético", "cliente": "Cimed", "validade_meses": 12, "data_vigencia": "2025-01-29", "processo": "'25351013599202559"}, {"produto": "Gel Carboidrato Simples", "sabor": "Limão", "embalagem": "Sachê Metalizado", "peso": "40 g", "marca": "Lavitan Carbogel Repositor Energético", "cliente": "Cimed", "validade_meses": 12, "data_vigencia": "2025-01-29", "processo": "25351013599202559"}, {"produto": "Gel Carboidrato com cafeína e Taurina", "sabor": "Açaí com Guaraná", "embalagem": "Sachê Metalizado", "peso": "40 g", "marca": "Emana", "cliente": "Piracanjuba", "validade_meses": 12, "data_vigencia": "2025-07-22", "processo": "25351124479202586"}, {"produto": "Gel Carboidrato com cafeína e Taurina", "sabor": "Café", "embalagem": "Sachê Metalizado", "peso": "40 g", "marca": "Ult", "cliente": "Richflow", "validade_meses": 12, "data_vigencia": "2025-07-22", "processo": "25351124479202586"}, {"produto": "Gel Carboidrato com cafeína e Taurina", "sabor": "Café", "embalagem": "Sachê Metalizado", "peso": "40 g", "marca": "Fuselabs", "cliente": "Fuselabs", "validade_meses": 12, "data_vigencia": "2025-07-22", "processo": "25351124479202586"}, {"produto": "Gel Carboidrato com cafeína e Taurina", "sabor": "Chocolate", "embalagem": "Sachê Metalizado", "peso": "40 g", "marca": "Lavitan Carbogel Repositor Energético", "cliente": "Cimed", "validade_meses": 12, "data_vigencia": "2025-02-07", "processo": "'25351019185202533"}, {"produto": "Gel Carboidrato com cafeína e Taurina", "sabor": "Frutas Amarelas", "embalagem": "Sachê Metalizado", "peso": "40 g", "marca": "Masterway", "cliente": "Masterway", "validade_meses": 12, "data_vigencia": "2025-07-22", "processo": "25351124479202586"}, {"produto": "Gel Carboidrato com cafeína e Taurina", "sabor": "Frutas Amarelas", "embalagem": "Sachê Metalizado", "peso": "40 g", "marca": "Gup", "cliente": "Evora", "validade_meses": 12, "data_vigencia": "2025-07-22", "processo": "25351124479202586"}, {"produto": "Gel Carboidrato com cafeína e Taurina", "sabor": "Frutas Amarelas", "embalagem": "Sachê Metalizado", "peso": "40 g", "marca": "Atleta Up", "cliente": "Sunset Sports", "validade_meses": 12, "data_vigencia": "2025-07-22", "processo": "25351124479202586"}, {"produto": "Gel Carboidrato com cafeína e Taurina", "sabor": "Frutas Roxas", "embalagem": "Sachê Metalizado", "peso": "40 g", "marca": "Hack", "cliente": "Hack", "validade_meses": 12, "data_vigencia": "2025-07-22", "processo": "25351124479202586"}, {"produto": "Gel Carboidrato com cafeína e Taurina", "sabor": "Frutas Roxas", "embalagem": "Sachê Metalizado", "peso": "40 g", "marca": "Nutratec", "cliente": "New Nutrition", "validade_meses": 12, "data_vigencia": "2025-07-22", "processo": "25351124479202586"}, {"produto": "Gel Carboidrato com cafeína e Taurina", "sabor": "Frutas Vermelhas", "embalagem": "Sachê Metalizado", "peso": "40 g", "marca": "Hack", "cliente": "Hack", "validade_meses": 12, "data_vigencia": "2025-07-22", "processo": "25351124479202586"}, {"produto": "Gel Carboidrato com cafeína e Taurina", "sabor": "Frutas Vermelhas", "embalagem": "Sachê Metalizado", "peso": "40 g", "marca": "Upy", "cliente": "Upy", "validade_meses": 12, "data_vigencia": "2025-07-22", "processo": "25351124479202586"}, {"produto": "Gel Carboidrato com cafeína e Taurina", "sabor": "Frutas Vermelhas", "embalagem": "Sachê Metalizado", "peso": "40 g", "marca": "Masterway", "cliente": "Masterway", "validade_meses": 12, "data_vigencia": "2025-07-22", "processo": "25351124479202586"}, {"produto": "Gel Carboidrato com cafeína e Taurina", "sabor": "Frutas Vermelhas", "embalagem": "Sachê Metalizado", "peso": "40 g", "marca": "Pup Gel", "cliente": "Farmácia Principio Ativa", "validade_meses": 12, "data_vigencia": "2025-07-22", "processo": "25351124479202586"}, {"produto": "Gel Carboidrato com cafeína e Taurina", "sabor": "Frutas Vermelhas", "embalagem": "Sachê Metalizado", "peso": "40 g", "marca": "Gup", "cliente": "Evora", "validade_meses": 12, "data_vigencia": "2025-07-22", "processo": "25351124479202586"}, {"produto": "Gel Carboidrato com cafeína e Taurina", "sabor": "Frutas Vermelhas", "embalagem": "Sachê Metalizado", "peso": "40 g", "marca": "Fuselabs", "cliente": "Fuselabs", "validade_meses": 12, "data_vigencia": "2025-07-22", "processo": "25351124479202586"}, {"produto": "Gel Carboidrato com cafeína e Taurina", "sabor": "Morango com Maracujá", "embalagem": "Sachê Metalizado", "peso": "40 g", "marca": "Inspire Nutrition", "cliente": "Way", "validade_meses": 12, "data_vigencia": "2025-07-22", "processo": "25351124479202586"}, {"produto": "Gel Carboidrato com cafeína e Taurina", "sabor": "Pink Lemonade", "embalagem": "Sachê Metalizado", "peso": "40 g", "marca": "Inspire Nutrition", "cliente": "Way", "validade_meses": 12, "data_vigencia": "2025-07-22", "processo": "25351124479202586"}, {"produto": "Gel Carboidrato com cafeína e Taurina", "sabor": "Pink Lemonade", "embalagem": "Sachê Metalizado", "peso": "40 g", "marca": "Inspire Nutrition", "cliente": "Way", "validade_meses": 12, "data_vigencia": "2025-07-22", "processo": "25351124479202586"}, {"produto": "Gel baunilha com limão", "sabor": "Baunilha com limão", "embalagem": "Sachê Metalizado", "peso": "40 g", "marca": "Aminovital Energy Baunilha Com Limão", "cliente": "Ajinomoto", "validade_meses": 9, "data_vigencia": "2026-02-05", "processo": "25351025525202646"}, {"produto": "Gel de  Carboidratos", "sabor": "Beijinho de Coco", "embalagem": "Sachê Metalizado", "peso": "40 g", "marca": "Upy", "cliente": "Upy", "validade_meses": 12, "data_vigencia": "2025-07-29", "processo": "25351129987202551"}, {"produto": "Gel de  Carboidratos", "sabor": "Blueberry", "embalagem": "Sachê Metalizado", "peso": "40 g", "marca": "Inspire Nutrition", "cliente": "Way", "validade_meses": 12, "data_vigencia": "2025-07-29", "processo": "25351129987202551"}, {"produto": "Gel de  Carboidratos", "sabor": "Caramelo Salgado", "embalagem": "Sachê Metalizado", "peso": "40 g", "marca": "Emana", "cliente": "Piracanjuba", "validade_meses": 12, "data_vigencia": "2025-07-29", "processo": "25351129987202551"}, {"produto": "Gel de  Carboidratos", "sabor": "Coco", "embalagem": "Sachê Metalizado", "peso": "40 g", "marca": "Ult", "cliente": "Richflow", "validade_meses": 12, "data_vigencia": "2025-07-29", "processo": "25351129987202551"}, {"produto": "Gel de  Carboidratos", "sabor": "Frutas Amarelas", "embalagem": "Sachê Metalizado", "peso": "40 g", "marca": "Fuselabs", "cliente": "Fuselabs", "validade_meses": 12, "data_vigencia": "2025-07-29", "processo": "25351129987202551"}, {"produto": "Gel de  Carboidratos", "sabor": "Frutas Amarelas", "embalagem": "Sachê Metalizado", "peso": "40 g", "marca": "Ult", "cliente": "Richflow", "validade_meses": 12, "data_vigencia": "2025-07-29", "processo": "25351129987202551"}, {"produto": "Gel de  Carboidratos", "sabor": "Frutas Amarelas", "embalagem": "Sachê Metalizado", "peso": "40 g", "marca": "On Cells", "cliente": "On Cells", "validade_meses": 12, "data_vigencia": "2025-07-29", "processo": "25351129987202551"}, {"produto": "Gel de  Carboidratos", "sabor": "Frutas Amarelas", "embalagem": "Sachê Metalizado", "peso": "40 g", "marca": "Pup Gel", "cliente": "Farmácia Principio Ativa", "validade_meses": 12, "data_vigencia": "2025-07-29", "processo": "25351129987202551"}, {"produto": "Gel de  Carboidratos", "sabor": "Frutas Roxas", "embalagem": "Sachê Metalizado", "peso": "40 g", "marca": "Fuselabs", "cliente": "Fuselabs", "validade_meses": 12, "data_vigencia": "2025-07-29", "processo": "25351129987202551"}, {"produto": "Gel de  Carboidratos", "sabor": "Frutas Roxas", "embalagem": "Sachê Metalizado", "peso": "40 g", "marca": "Ult", "cliente": "Richflow", "validade_meses": 12, "data_vigencia": "2025-07-29", "processo": "25351129987202551"}, {"produto": "Gel de  Carboidratos", "sabor": "Frutas Roxas", "embalagem": "Sachê Metalizado", "peso": "40 g", "marca": "Pup Gel", "cliente": "Farmácia Principio Ativa", "validade_meses": 12, "data_vigencia": "2025-07-29", "processo": "25351129987202551"}, {"produto": "Gel de  Carboidratos", "sabor": "Frutas Vermelhas", "embalagem": "Sachê Metalizado", "peso": "40 g", "marca": "Avince", "cliente": "Avince", "validade_meses": 12, "data_vigencia": "2025-07-29", "processo": "25351129987202551"}, {"produto": "Gel de  Carboidratos", "sabor": "Frutas Vermelhas", "embalagem": "Sachê Metalizado", "peso": "40 g", "marca": "Ult", "cliente": "Richflow", "validade_meses": 12, "data_vigencia": "2025-07-29", "processo": "25351129987202551"}, {"produto": "Gel de  Carboidratos", "sabor": "Neutro", "embalagem": "Sachê Metalizado", "peso": "40 g", "marca": "Fuselabs", "cliente": "Fuselabs", "validade_meses": 12, "data_vigencia": "2025-07-29", "processo": "25351129987202551"}, {"produto": "Gel de  Carboidratos", "sabor": "Uva verde", "embalagem": "Sachê Metalizado", "peso": "40 g", "marca": "Hack", "cliente": "Hack", "validade_meses": 12, "data_vigencia": "2025-07-29", "processo": "25351129987202551"}, {"produto": "Gel de  Carboidratos", "sabor": "Água de Coco", "embalagem": "Sachê Metalizado", "peso": "40 g", "marca": "Emana", "cliente": "Piracanjuba", "validade_meses": 12, "data_vigencia": "2025-07-29", "processo": "25351129987202551"}, {"produto": "Gel de Body Balance", "sabor": "Chocolate", "embalagem": "Sachê Metalizado", "peso": "40 g", "marca": "Proten Gel", "cliente": "Pronutrition", "validade_meses": 9, "data_vigencia": "2026-02-26", "processo": "25351035828202677"}, {"produto": "Gel de Body Balance", "sabor": "Chocolate", "embalagem": "Sachê Metalizado", "peso": "40 g", "marca": "Bioera Nutrition", "cliente": "Bioera Nutrition", "validade_meses": 9, "data_vigencia": "2026-02-26", "processo": "25351035828202677"}, {"produto": "Gel de Fibras", "sabor": "Morango", "embalagem": "Sachê Metalizado", "peso": "35 g", "marca": "Pronutrition", "cliente": "Pronutrition", "validade_meses": 12, "data_vigencia": "2025-11-25", "processo": "'25351217903202535"}, {"produto": "Gel de Fibras", "sabor": "Morango", "embalagem": "Sachê Metalizado", "peso": "20 g", "marca": "Pronutrition", "cliente": "Pronutrition", "validade_meses": 12, "data_vigencia": "2025-11-25", "processo": "'25351217903202535"}, {"produto": "Gel frutas cítricas", "sabor": "Frutas Cítricas", "embalagem": "Sachê Metalizado", "peso": "40 g", "marca": "Aminovital Energy Frutas Cítricas", "cliente": "Ajinomoto", "validade_meses": 13, "data_vigencia": "2026-02-05", "processo": "25351025534202637"}, {"produto": "Glutamina", "sabor": "Neutro", "embalagem": "Pote PEAD", "peso": "300 g", "marca": "Pronutrition", "cliente": "Pronutrition", "validade_meses": 24, "data_vigencia": "2024-11-26", "processo": "25351446673202439"}, {"produto": "Glutamina", "sabor": "Neutro", "embalagem": "Pote PEAD", "peso": "300 g", "marca": "Dazz", "cliente": "Bemol", "validade_meses": 24, "data_vigencia": "2024-11-26", "processo": "25351446673202439"}, {"produto": "Glutamina", "sabor": "Neutro", "embalagem": "Pote PEAD", "peso": "300 g", "marca": "Glutapure", "cliente": "Hive", "validade_meses": 24, "data_vigencia": "2024-11-26", "processo": "25351446673202439"}, {"produto": "Glutamina", "sabor": "Neutro", "embalagem": "Pote PEAD", "peso": "300 g", "marca": "Glutamint", "cliente": "Humana", "validade_meses": 24, "data_vigencia": "2024-11-26", "processo": "25351446673202439"}, {"produto": "Hidrogel COM cafeína", "sabor": "Neutro", "embalagem": "Sachê Metalizado", "peso": "40 g", "marca": "Hidrogel Tech", "cliente": "Dobro", "validade_meses": 12, "data_vigencia": "2025-05-26", "processo": "25351085816202511"}, {"produto": "Hidrogel COM cafeína", "sabor": "Neutro", "embalagem": "Sachê Metalizado", "peso": "40 g", "marca": "Pronutrition", "cliente": "Pronutrition", "validade_meses": 12, "data_vigencia": "2025-05-26", "processo": "25351085816202511"}, {"produto": "Hidrogel SEM cafeína", "sabor": "Neutro", "embalagem": "Sachê Metalizado", "peso": "40 g", "marca": "Hidrogel Tech", "cliente": "Dobro", "validade_meses": 12, "data_vigencia": "2025-05-26", "processo": "25351085815202568"}, {"produto": "Hidrogel SEM cafeína", "sabor": "Neutro", "embalagem": "Sachê Metalizado", "peso": "40 g", "marca": "Pronutrition", "cliente": "Pronutrition", "validade_meses": 12, "data_vigencia": "2025-05-26", "processo": "25351085815202568"}, {"produto": "Proteína Vegetal", "sabor": "Chocolate", "embalagem": "Pote PET", "peso": "525 g", "marca": "Sunrize", "cliente": "Sunrize", "validade_meses": 12, "data_vigencia": "2025-03-25", "processo": "25351048172202571"}, {"produto": "Proteína Vegetal", "sabor": "Chocolate com coco", "embalagem": "Pote PET", "peso": "525 g", "marca": "Pronutrition", "cliente": "Pronutrition", "validade_meses": 12, "data_vigencia": "2025-08-20", "processo": "25351147643202523"}, {"produto": "Proteína Vegetal", "sabor": "Chocolate com coco", "embalagem": "Pote PET", "peso": "525 g", "marca": "Arium Veg", "cliente": "Arium", "validade_meses": 12, "data_vigencia": "2025-08-20", "processo": "25351147643202523"}, {"produto": "Shot-Bem Estar", "sabor": "Maçã Verde", "embalagem": "Pote PEAD", "peso": "300 g", "marca": "Pronutrition", "cliente": "Pronutrition", "validade_meses": 12, "data_vigencia": "2025-11-25", "processo": "25351217909202511"}, {"produto": "WPC80", "sabor": "Baunilha", "embalagem": "Pote PEAD", "peso": "900 g", "marca": "Pronutrition", "cliente": "Pronutrition", "validade_meses": 18, "data_vigencia": "2024-12-04", "processo": "25351451913202417"}, {"produto": "WPC80", "sabor": "Baunilha", "embalagem": "Pote PEAD", "peso": "400 g", "marca": "Pronutrition", "cliente": "Pronutrition", "validade_meses": 18, "data_vigencia": "2024-12-04", "processo": "25351451913202417"}, {"produto": "WPC80", "sabor": "Chocolate", "embalagem": "Pote PEAD", "peso": "900 g", "marca": "Pronutrition", "cliente": "Pronutrition", "validade_meses": 18, "data_vigencia": "2024-12-04", "processo": "25351451913202417"}, {"produto": "WPC80", "sabor": "Chocolate", "embalagem": "Pote PEAD", "peso": "400 g", "marca": "Pronutrition", "cliente": "Pronutrition", "validade_meses": 18, "data_vigencia": "2024-12-04", "processo": "25351451913202417"}, {"produto": "WPI", "sabor": "Baunilha", "embalagem": "Pote PEAD", "peso": "900 g", "marca": "Pronutrition", "cliente": "Pronutrition", "validade_meses": 12, "data_vigencia": "2025-09-16", "processo": "25351165712202581"}, {"produto": "WPI", "sabor": "Baunilha", "embalagem": "Lata", "peso": "300 g", "marca": "Pronutrition", "cliente": "Pronutrition", "validade_meses": 12, "data_vigencia": "2025-09-16", "processo": "25351165712202581"}], "por_produto": [{"produto": "Gel Carboidrato com cafeína e Taurina", "n_sabores": 8, "sabores": ["Açaí com Guaraná", "Café", "Chocolate", "Frutas Amarelas", "Frutas Roxas", "Frutas Vermelhas", "Morango com Maracujá", "Pink Lemonade"], "n_pesos": 1, "pesos": ["40 g"], "n_notificacoes": 18}, {"produto": "Gel de  Carboidratos", "n_sabores": 10, "sabores": ["Beijinho de Coco", "Blueberry", "Caramelo Salgado", "Coco", "Frutas Amarelas", "Frutas Roxas", "Frutas Vermelhas", "Neutro", "Uva verde", "Água de Coco"], "n_pesos": 1, "pesos": ["40 g"], "n_notificacoes": 16}, {"produto": "Creatina", "n_sabores": 1, "sabores": ["Neutro"], "n_pesos": 5, "pesos": ["100 g", "150 g", "300 g", "500 g", "600 g"], "n_notificacoes": 14}, {"produto": "Colágeno Verisol com ácido hialurônico (sem zinco)", "n_sabores": 8, "sabores": ["Abacaxi com Hortelã", "Amora", "Cranberry", "Frutas Vermelhas", "Hibisco com Limão", "Limão", "Maçã Verde", "Pêssego"], "n_pesos": 2, "pesos": ["220 g", "300 g"], "n_notificacoes": 10}, {"produto": "Glutamina", "n_sabores": 1, "sabores": ["Neutro"], "n_pesos": 1, "pesos": ["300 g"], "n_notificacoes": 4}, {"produto": "WPC80", "n_sabores": 2, "sabores": ["Baunilha", "Chocolate"], "n_pesos": 2, "pesos": ["400 g", "900 g"], "n_notificacoes": 4}, {"produto": "Acalma com gaba", "n_sabores": 1, "sabores": ["Pera e mel"], "n_pesos": 1, "pesos": ["150 g"], "n_notificacoes": 3}, {"produto": "Proteína Vegetal", "n_sabores": 2, "sabores": ["Chocolate", "Chocolate com coco"], "n_pesos": 1, "pesos": ["525 g"], "n_notificacoes": 3}, {"produto": "Colágeno Verisol com ácido hialurônico (com zinco)", "n_sabores": 2, "sabores": ["Abacaxi com Hortelã", "Maçã Verde"], "n_pesos": 1, "pesos": ["300 g"], "n_notificacoes": 2}, {"produto": "Gel Carboidrato Simples", "n_sabores": 2, "sabores": ["Caramelo", "Limão"], "n_pesos": 1, "pesos": ["40 g"], "n_notificacoes": 2}, {"produto": "Gel de Body Balance", "n_sabores": 1, "sabores": ["Chocolate"], "n_pesos": 1, "pesos": ["40 g"], "n_notificacoes": 2}, {"produto": "Gel de Fibras", "n_sabores": 1, "sabores": ["Morango"], "n_pesos": 2, "pesos": ["20 g", "35 g"], "n_notificacoes": 2}, {"produto": "Hidrogel COM cafeína", "n_sabores": 1, "sabores": ["Neutro"], "n_pesos": 1, "pesos": ["40 g"], "n_notificacoes": 2}, {"produto": "Hidrogel SEM cafeína", "n_sabores": 1, "sabores": ["Neutro"], "n_pesos": 1, "pesos": ["40 g"], "n_notificacoes": 2}, {"produto": "WPI", "n_sabores": 1, "sabores": ["Baunilha"], "n_pesos": 2, "pesos": ["300 g", "900 g"], "n_notificacoes": 2}, {"produto": "Gel Antioxidante", "n_sabores": 1, "sabores": ["Açaí com mirtilo"], "n_pesos": 1, "pesos": ["40 g"], "n_notificacoes": 1}, {"produto": "Gel baunilha com limão", "n_sabores": 1, "sabores": ["Baunilha com limão"], "n_pesos": 1, "pesos": ["40 g"], "n_notificacoes": 1}, {"produto": "Gel frutas cítricas", "n_sabores": 1, "sabores": ["Frutas Cítricas"], "n_pesos": 1, "pesos": ["40 g"], "n_notificacoes": 1}, {"produto": "Shot-Bem Estar", "n_sabores": 1, "sabores": ["Maçã Verde"], "n_pesos": 1, "pesos": ["300 g"], "n_notificacoes": 1}], "total_sabores": 30, "total_pesos": 12}, "gastos_clientes": {"fonte": "Gastos Reais", "registros": [{"cliente": "Ajinomoto", "valor": 4423.15, "status": "Pago", "lab": "CEIMIC ACCER", "data_pagamento": "2026-01-30", "descricao": "Produto: Gel de Carboidratos Frutas Cítricas e Gel de Carboidrato Baun"}, {"cliente": "Ajinomoto", "valor": 2987.17, "status": "Pago", "lab": "ANVISA", "data_pagamento": "2026-02-09", "descricao": "Taxa de Notificação - Gel Frutas Cítricas -  Cobrado cliente NF Pro:19"}, {"cliente": "Ajinomoto", "valor": 2987.17, "status": "Pago", "lab": "ANVISA", "data_pagamento": "2026-02-09", "descricao": "Taxa de Notificação -  Gel Baunilha com Limão - Cobrado cliente NF Pro"}, {"cliente": "Ajinomoto", "valor": 4423.15, "status": "Pago", "lab": "CEIMIC ACCER", "data_pagamento": "2026-03-04", "descricao": "Análises para estabilidade em Produto Acabado"}, {"cliente": "Ajinomoto", "valor": 4423.15, "status": "Pago", "lab": "CEIMIC ACCER", "data_pagamento": "2026-04-23", "descricao": "Análises para estabilidade em Produto AcabadoCliente: AjinomotoProduto"}, {"cliente": "Ajinomoto", "valor": 4423.15, "status": "Pago", "lab": "CEIMIC ACCER", "data_pagamento": "2026-06-08", "descricao": "Análises para estabilidade em Produto AcabadoCliente: AjinomotoProduto"}, {"cliente": "Ajinomoto", "valor": 4423.16, "status": "Pago", "lab": "CEIMIC ACCER", "data_pagamento": "2026-06-08", "descricao": "Análises para estabilidade em Produto Acabado Cliente: Ajinomoto Produ"}, {"cliente": "Ajinomoto", "valor": 4423.15, "status": "Pago", "lab": "CEIMIC ACCER", "data_pagamento": "2026-07-14", "descricao": "Cliente: Ajinomoto  (Proposta 5216_2025D) Produto: Ajinomoto - Gel Bau"}, {"cliente": "Chacomer", "valor": 11020.0, "status": "Pago", "lab": "PRIME SERVIC", "data_pagamento": "2026-03-05", "descricao": "Análises para estabilidade em produto acabado"}, {"cliente": "Chacomer", "valor": 4791.16, "status": "Pago", "lab": "1CBO ASSESSO", "data_pagamento": "2026-04-14", "descricao": "Análises para estabilidade em Produto Acabado"}, {"cliente": "Cimed", "valor": 3805.61, "status": "Pago", "lab": "CEIMIC ACCER", "data_pagamento": "2026-01-05", "descricao": "Análises para estabilidade em Produto Acabado"}, {"cliente": "Cimed", "valor": 4809.81, "status": "Pago", "lab": "CEIMIC ACCER", "data_pagamento": "2026-01-09", "descricao": "ANALISE:LAVITAN CARBOGEL CHOCOLATE E LIMAO"}, {"cliente": "Cimed", "valor": 4809.81, "status": "Pago", "lab": "CEIMIC ACCER", "data_pagamento": "2026-01-18", "descricao": "ANALISE:GEL SABOR LIMÃO"}, {"cliente": "Cimed", "valor": 4809.81, "status": "Pago", "lab": "CEIMIC ACCER", "data_pagamento": "2026-01-30", "descricao": "Produto: Gel de Carboidratos com Cafeína Limão e Gel de Carboidratos c"}, {"cliente": "Cimed", "valor": 29589.35, "status": "Pago", "lab": "CEIMIC ACCER", "data_pagamento": "2026-01-30", "descricao": "Produto: Colágeno Abacaxi com Hortelã"}, {"cliente": "Cimed", "valor": 3805.61, "status": "Pago", "lab": "CEIMIC ACCER", "data_pagamento": "2026-03-02", "descricao": "Análises para estabilidade em Produto Acabado"}, {"cliente": "Cimed", "valor": 4809.81, "status": "Pago", "lab": "CEIMIC ACCER", "data_pagamento": "2026-04-22", "descricao": "Análises para estabilidade em Produto Acabado"}, {"cliente": "Cimed", "valor": 4809.81, "status": "Pago", "lab": "CEIMIC ACCER", "data_pagamento": "2026-06-08", "descricao": "Análises para estabilidade em Produto Acabado Cliente: Cimed Produto: "}, {"cliente": "Cimed", "valor": 17737.65, "status": "Pago", "lab": "CEIMIC ACCER", "data_pagamento": "2026-06-15", "descricao": "Análises para estabilidade em Produto Acabado: Colágeno Lavitan"}, {"cliente": "Cimed", "valor": 24169.51, "status": "Pago", "lab": "CEIMIC ACCER", "data_pagamento": "2026-06-25", "descricao": "Análises para estabilidade em Produto AcabadoCliente: CimedProduto: Co"}, {"cliente": "Decathlon", "valor": 2549.58, "status": "Pago", "lab": "CEIMIC ACCER", "data_pagamento": "2026-03-31", "descricao": "Análises para estabilidade em Produto Acabado"}, {"cliente": "Decathlon", "valor": 2549.58, "status": "Pago", "lab": "CEIMIC ACCER", "data_pagamento": "2026-03-31", "descricao": "Análises para estabilidade em Produto Acabado"}, {"cliente": "Decathlon", "valor": 2956.27, "status": "Pago", "lab": "CEIMIC ACCER", "data_pagamento": "2026-03-31", "descricao": "Análises para estabilidade em Produto Acabado"}, {"cliente": "Decathlon", "valor": 3430.53, "status": "Pago", "lab": "CEIMIC ACCER", "data_pagamento": "2026-03-31", "descricao": "Análises para estabilidade em Produto Acabado"}, {"cliente": "Decathlon", "valor": 3488.09, "status": "Pago", "lab": "CEIMIC ACCER", "data_pagamento": "2026-03-31", "descricao": "Análises para estabilidade em Produto Acabado"}, {"cliente": "Fepase", "valor": 4117.8, "status": "Pago", "lab": "CEIMIC ACCER", "data_pagamento": "2026-05-26", "descricao": "Análises para estabilidade em Produto AcabadoCliente: FepaseProduto: G"}, {"cliente": "Fepase", "valor": 4774.75, "status": "Pago", "lab": "CEIMIC ACCER", "data_pagamento": "2026-05-26", "descricao": "Análises para estabilidade em Produto AcabadoCliente: FepaseProduto: G"}, {"cliente": "Fepase", "valor": 8235.6, "status": "Pago", "lab": "CEIMIC ACCER", "data_pagamento": "2026-06-15", "descricao": "Análises para estabilidade em Produto Acabado Cliente: Fepase"}, {"cliente": "Fepase", "valor": 4774.75, "status": "Pago", "lab": "CEIMIC ACCER", "data_pagamento": "2026-06-25", "descricao": "Análises para estabilidade em Produto Acabado"}, {"cliente": "Humana", "valor": 1993.37, "status": "Pago", "lab": "INTEGRATED", "data_pagamento": "2026-06-24", "descricao": "Análises para estabilidade em Produto AcabadoCliente: HumanaProduto: W"}, {"cliente": "Sunrize", "valor": 4688.93, "status": "Pago", "lab": "CEIMIC ACCER", "data_pagamento": "2026-01-09", "descricao": "ANALISE:VEJA SUNRIZE BAUNILHA"}, {"cliente": "Sunrize", "valor": 4688.93, "status": "Pago", "lab": "CEIMIC ACCER", "data_pagamento": "2026-01-19", "descricao": "ANALISE: PROTEINA VEGETAL DE BAUNILHA"}, {"cliente": "Sunrize", "valor": 4688.93, "status": "Pago", "lab": "CEIMIC ACCER", "data_pagamento": "2026-04-23", "descricao": "Análises para estabilidade em Produto Acabado Cliente: SunrizeProduto:"}, {"cliente": "Sunrize", "valor": 4688.93, "status": "Pago", "lab": "CEIMIC ACCER", "data_pagamento": "2026-06-24", "descricao": "Análises para estabilidade em Produto AcabadoCliente: SunrizeProduto: "}, {"cliente": "Sunrize", "valor": 4688.93, "status": "Pago", "lab": "CEIMIC ACCER", "data_pagamento": "2026-06-26", "descricao": "Análises para estabilidade em Produto AcabadoCliente: SunrizeProduto: "}, {"cliente": "Talita Tozzo", "valor": 3128.33, "status": "Pago", "lab": "CEIMIC ACCER", "data_pagamento": "2026-01-20", "descricao": "ANALISE:Calm Gut (ACC_5290_2025)"}, {"cliente": "Talita Tozzo", "valor": 3128.33, "status": "Pago", "lab": "CEIMIC ACCER", "data_pagamento": "2026-03-04", "descricao": "Análises para estabilidade em Produto Acabado"}, {"cliente": "Talita Tozzo", "valor": 4688.93, "status": "Pago", "lab": "CEIMIC ACCER", "data_pagamento": "2026-03-23", "descricao": "Análises para estabilidade em Produto Acabado"}, {"cliente": "Talita Tozzo", "valor": 3128.33, "status": "Pago", "lab": "CEIMIC ACCER", "data_pagamento": "2026-06-08", "descricao": "Análises para estabilidade em Produto AcabadoCliente: Talita Tozzo (Vi"}, {"cliente": "Talita Tozzo", "valor": 3128.33, "status": "Pago", "lab": "CEIMIC ACCER", "data_pagamento": "2026-06-15", "descricao": "Análises para estabilidade em Produto Acabado"}, {"cliente": "Vitamidas", "valor": 3128.33, "status": "Pago", "lab": "CEIMIC ACCER", "data_pagamento": "2026-06-26", "descricao": "Análises para estabilidade em Produto AcabadoCliente: VitamidasProduto"}], "ranking": [["Cimed", 103156.78], ["Ajinomoto", 32513.25], ["Sunrize", 23444.65], ["Fepase", 21902.9], ["Talita Tozzo", 17202.25], ["Chacomer", 15811.16], ["Decathlon", 14974.05], ["Vitamidas", 3128.33], ["Humana", 1993.37]], "ranking_detalhe": {"Cimed": {"pago": 103156.78, "a_vencer": 0.0, "n": 10}, "Sunrize": {"pago": 23444.65, "a_vencer": 0.0, "n": 5}, "Talita Tozzo": {"pago": 17202.25, "a_vencer": 0.0, "n": 5}, "Ajinomoto": {"pago": 32513.25, "a_vencer": 0.0, "n": 8}, "Chacomer": {"pago": 15811.16, "a_vencer": 0.0, "n": 2}, "Decathlon": {"pago": 14974.05, "a_vencer": 0.0, "n": 5}, "Fepase": {"pago": 21902.9, "a_vencer": 0.0, "n": 4}, "Humana": {"pago": 1993.37, "a_vencer": 0.0, "n": 1}, "Vitamidas": {"pago": 3128.33, "a_vencer": 0.0, "n": 1}}, "total_pago": 234126.74, "total_a_vencer": 0.0, "n_registros": 41}, "rev_arte": {"total_produtos_cliente": 97, "total_revisoes": 185, "media_revisoes": 1.91, "pct_com_retrabalho": 58.8, "distribuicao": {"5+": 1, "4": 4, "3": 20, "2": 32, "1": 40}, "ranking": [{"produto": "Gel Body Balance - Sachê", "cliente": "Pronutrition", "marca": "Proteingel", "n_revisoes": 5, "max_versao": 3, "primeira_entrada": "2026-02-12", "ultima_entrada": "2026-04-07"}, {"produto": "Eletrólitos Abacaxi Hortelã CIF - Stick", "cliente": "Swus", "marca": "Swus", "n_revisoes": 4, "max_versao": 6, "primeira_entrada": "2026-03-31", "ultima_entrada": "2026-06-09"}, {"produto": "Gel Body Balance - Display", "cliente": "Bioera", "marca": "Bioera", "n_revisoes": 4, "max_versao": 4, "primeira_entrada": "2026-02-23", "ultima_entrada": "2026-04-17"}, {"produto": "Gel Body Balance - Sachê", "cliente": "Bioera", "marca": "Bioera", "n_revisoes": 4, "max_versao": 4, "primeira_entrada": "2026-02-12", "ultima_entrada": "2026-04-17"}, {"produto": "Gel de Carboidratos Café", "cliente": "Fuselabs", "marca": "Fuselabs", "n_revisoes": 4, "max_versao": 2, "primeira_entrada": "2026-03-11", "ultima_entrada": "2026-03-23"}, {"produto": "Glutamina Pote", "cliente": "Humana", "marca": "Humana", "n_revisoes": 3, "max_versao": 3, "primeira_entrada": "2026-03-26", "ultima_entrada": "2026-05-04"}, {"produto": "Eletrólitos Maçã Verde Stick", "cliente": "Laboratório Wesp", "marca": "Lab Wesp", "n_revisoes": 3, "max_versao": 3, "primeira_entrada": "2026-03-20", "ultima_entrada": "2026-05-13"}, {"produto": "Eletrólitos Maçã Verde Display", "cliente": "Laboratório Wesp", "marca": "Lab Wesp", "n_revisoes": 3, "max_versao": 3, "primeira_entrada": "2026-03-20", "ultima_entrada": "2026-05-13"}, {"produto": "Eletrólitos Melancia com Limão Stick", "cliente": "Laboratório Wesp", "marca": "Lab Wesp", "n_revisoes": 3, "max_versao": 3, "primeira_entrada": "2026-03-20", "ultima_entrada": "2026-05-13"}, {"produto": "Eletrólitos Melancia com Limão Display", "cliente": "Laboratório Wesp", "marca": "Lab Wesp", "n_revisoes": 3, "max_versao": 3, "primeira_entrada": "2026-03-20", "ultima_entrada": "2026-05-13"}, {"produto": "Eletrólitos Abacaxi com Hortelã CIF", "cliente": "Ukyo", "marca": "Ukyo", "n_revisoes": 3, "max_versao": 3, "primeira_entrada": "2026-01-30", "ultima_entrada": "2026-03-10"}, {"produto": "Eletrólitos Maçã Verde CIF", "cliente": "Ukyo", "marca": "Ukyo", "n_revisoes": 3, "max_versao": 3, "primeira_entrada": "2026-01-30", "ultima_entrada": "2026-03-10"}, {"produto": "Gel Frutas Amarelas - Sunset - Display", "cliente": "Sunset Sports", "marca": "Athleta Up", "n_revisoes": 3, "max_versao": 3, "primeira_entrada": "2026-02-04", "ultima_entrada": "2026-03-06"}, {"produto": "Gel Frutas Amarelas - Sunset - Sachê", "cliente": "Sunset Sports", "marca": "Athleta Up", "n_revisoes": 3, "max_versao": 3, "primeira_entrada": "2026-02-04", "ultima_entrada": "2026-03-06"}, {"produto": "Gel de Carboidratos Uva Verde Display", "cliente": "Pronutrition", "marca": "Pronutrition", "n_revisoes": 3, "max_versao": 2, "primeira_entrada": "2026-03-26", "ultima_entrada": "2026-04-06"}, {"produto": "Gel de Carboidratos sabor Coco - Sachê", "cliente": "Upy", "marca": "Upy", "n_revisoes": 3, "max_versao": 3, "primeira_entrada": "2026-05-12", "ultima_entrada": "2026-06-02"}, {"produto": "Gel de Carboidratos sabor Coco - Display", "cliente": "Upy", "marca": "Upy", "n_revisoes": 3, "max_versao": 3, "primeira_entrada": "2026-05-12", "ultima_entrada": "2026-06-02"}, {"produto": "Creatina 600 g", "cliente": "Way", "marca": "Way", "n_revisoes": 3, "max_versao": 3, "primeira_entrada": "2026-06-09", "ultima_entrada": "2026-06-25"}, {"produto": "Colágeno Limão", "cliente": "The One Life", "marca": "The One Life", "n_revisoes": 3, "max_versao": 3, "primeira_entrada": "2026-06-15", "ultima_entrada": "2026-07-15"}, {"produto": "Gel de Carboidratos Uva Verde Sachê", "cliente": "Gummy Med", "marca": "Gummy Med", "n_revisoes": 3, "max_versao": 3, "primeira_entrada": "2026-06-17", "ultima_entrada": "2026-07-07"}, {"produto": "Gel de Carboidratos Uva Verde Display", "cliente": "Gummy Med", "marca": "Gummy Med", "n_revisoes": 3, "max_versao": 3, "primeira_entrada": "2026-06-17", "ultima_entrada": "2026-07-07"}, {"produto": "Gel de Carboidratos Abacaxi Sachê", "cliente": "Gummy Med", "marca": "Gummy Med", "n_revisoes": 3, "max_versao": 3, "primeira_entrada": "2026-06-17", "ultima_entrada": "2026-07-02"}, {"produto": "Gel de Carboidratos Abacaxi Display", "cliente": "Gummy Med", "marca": "Gummy Med", "n_revisoes": 3, "max_versao": 3, "primeira_entrada": "2026-06-17", "ultima_entrada": "2026-07-02"}, {"produto": "Gel de Carboidratos+Caf+Tau Caramelo Brulee Sachê", "cliente": "Gummy Med", "marca": "Gummy Med", "n_revisoes": 3, "max_versao": 3, "primeira_entrada": "2026-06-17", "ultima_entrada": "2026-07-02"}, {"produto": "Gel de Carboidratos+Caf+Tau Caramelo Brulee Display", "cliente": "Gummy Med", "marca": "Gummy Med", "n_revisoes": 3, "max_versao": 3, "primeira_entrada": "2026-06-17", "ultima_entrada": "2026-07-02"}], "ranking_cliente": [{"nome": "Fuselabs", "n_revisoes": 18, "n_produtos": 13}, {"nome": "Gummy Med", "n_revisoes": 18, "n_produtos": 6}, {"nome": "Decathlon", "n_revisoes": 18, "n_produtos": 9}, {"nome": "Pronutrition", "n_revisoes": 17, "n_produtos": 8}, {"nome": "Way", "n_revisoes": 13, "n_produtos": 8}, {"nome": "Laboratório Wesp", "n_revisoes": 12, "n_produtos": 4}, {"nome": "Flamengo", "n_revisoes": 11, "n_produtos": 10}, {"nome": "Champer", "n_revisoes": 10, "n_produtos": 5}, {"nome": "Sunset Sports", "n_revisoes": 8, "n_produtos": 3}, {"nome": "Bioera", "n_revisoes": 8, "n_produtos": 2}, {"nome": "Swus", "n_revisoes": 6, "n_produtos": 2}, {"nome": "Ukyo", "n_revisoes": 6, "n_produtos": 2}, {"nome": "Upy", "n_revisoes": 6, "n_produtos": 2}, {"nome": "Hack", "n_revisoes": 4, "n_produtos": 2}, {"nome": "Masterway", "n_revisoes": 4, "n_produtos": 4}, {"nome": "Humana", "n_revisoes": 3, "n_produtos": 1}, {"nome": "Bemol", "n_revisoes": 3, "n_produtos": 2}, {"nome": "Emana", "n_revisoes": 3, "n_produtos": 3}, {"nome": "Fini", "n_revisoes": 3, "n_produtos": 3}, {"nome": "The One Life", "n_revisoes": 3, "n_produtos": 1}, {"nome": "Cimed", "n_revisoes": 2, "n_produtos": 2}, {"nome": "Chacomer", "n_revisoes": 2, "n_produtos": 1}, {"nome": "Vitaree", "n_revisoes": 2, "n_produtos": 1}, {"nome": "Ajinomoto", "n_revisoes": 2, "n_produtos": 1}, {"nome": "Vitre Suplementos", "n_revisoes": 2, "n_produtos": 1}, {"nome": "Noova", "n_revisoes": 1, "n_produtos": 1}], "ranking_marca": [{"nome": "Fuselabs", "n_revisoes": 18, "n_produtos": 13}, {"nome": "Gummy Med", "n_revisoes": 18, "n_produtos": 6}, {"nome": "Lab Wesp", "n_revisoes": 12, "n_produtos": 4}, {"nome": "Flamengo", "n_revisoes": 11, "n_produtos": 10}, {"nome": "Energy", "n_revisoes": 10, "n_produtos": 6}, {"nome": "Naara", "n_revisoes": 10, "n_produtos": 5}, {"nome": "Decathlon", "n_revisoes": 10, "n_produtos": 5}, {"nome": "Athleta Up", "n_revisoes": 8, "n_produtos": 3}, {"nome": "Bioera", "n_revisoes": 8, "n_produtos": 2}, {"nome": "Way", "n_revisoes": 7, "n_produtos": 4}, {"nome": "Swus", "n_revisoes": 6, "n_produtos": 2}, {"nome": "Ukyo", "n_revisoes": 6, "n_produtos": 2}, {"nome": "Pronutrition", "n_revisoes": 6, "n_produtos": 3}, {"nome": "Upy", "n_revisoes": 6, "n_produtos": 2}, {"nome": "Proteingel", "n_revisoes": 5, "n_produtos": 1}, {"nome": "Resveragel", "n_revisoes": 5, "n_produtos": 3}, {"nome": "Master Gel", "n_revisoes": 4, "n_produtos": 4}, {"nome": "Ultra", "n_revisoes": 4, "n_produtos": 2}, {"nome": "Humana", "n_revisoes": 3, "n_produtos": 1}, {"nome": "Emana", "n_revisoes": 3, "n_produtos": 3}, {"nome": "Fini", "n_revisoes": 3, "n_produtos": 3}, {"nome": "The One Life", "n_revisoes": 3, "n_produtos": 1}, {"nome": "Chacomer", "n_revisoes": 2, "n_produtos": 1}, {"nome": "Vitaree", "n_revisoes": 2, "n_produtos": 1}, {"nome": "Aminovital", "n_revisoes": 2, "n_produtos": 1}, {"nome": "Vitre Suplementos", "n_revisoes": 2, "n_produtos": 1}, {"nome": "Bemol", "n_revisoes": 2, "n_produtos": 1}, {"nome": "Daaz", "n_revisoes": 1, "n_produtos": 1}, {"nome": "Urso", "n_revisoes": 1, "n_produtos": 1}, {"nome": "Gaba Equilibrium", "n_revisoes": 1, "n_produtos": 1}, {"nome": "Milimetric", "n_revisoes": 1, "n_produtos": 1}]}};
+const ROXO='#7B5FC7', ROXO2='#9D8AD6', ROXO3='#C4B8E8', VERDE='#8FD6A0', AMAR='#F5C664', VERM='#E8788A', ESC='#2B1E5C';
+Chart.defaults.font.family="'Segoe UI',system-ui,sans-serif";
+Chart.defaults.color='#7a7593';
+
+// Plugin: mantém os valores sempre visíveis sobre as barras (sem precisar de hover)
+const valueLabelsPlugin = {
+  id: 'valueLabels',
+  afterDatasetsDraw(chart, args, opts) {
+    if(opts && opts.enabled === false) return;
+    const {ctx} = chart;
+    const formatter = (opts && opts.formatter) || (v => (typeof v==='number' ? (Number.isInteger(v)?v:v.toFixed(1)) : v));
+    const stacked = !!((chart.options.scales||{}).x?.stacked || (chart.options.scales||{}).y?.stacked);
+    const horiz = chart.options.indexAxis === 'y';
+    const colorOut = (opts && opts.color) || '#3A3550';
+    const colorIn = (opts && opts.colorStacked) || '#ffffff';
+    ctx.save();
+    ctx.font = "700 9.5px 'Segoe UI', sans-serif";
+    chart.data.datasets.forEach((dataset, di)=>{
+      const meta = chart.getDatasetMeta(di);
+      if(meta.hidden) return;
+      meta.data.forEach((el, i)=>{
+        const value = dataset.data[i];
+        if(value===null||value===undefined) return;
+        if(typeof value==='number' && Math.abs(value)<0.0001) return;
+        const label = formatter(value, dataset, i);
+        if(label===''||label===null||label===undefined) return;
+        const props = el.getProps ? el.getProps(['x','y','base'], true) : el;
+        if(horiz){
+          if(stacked){
+            const size = Math.abs(props.x-props.base);
+            if(size<26) return;
+            ctx.fillStyle=colorIn; ctx.textAlign='center'; ctx.textBaseline='middle';
+            ctx.fillText(label, (props.x+props.base)/2, props.y);
+          } else {
+            ctx.fillStyle=colorOut; ctx.textAlign='left'; ctx.textBaseline='middle';
+            ctx.fillText(label, props.x+6, props.y);
+          }
+        } else {
+          if(stacked){
+            const size = Math.abs(props.y-props.base);
+            if(size<14) return;
+            ctx.fillStyle=colorIn; ctx.textAlign='center'; ctx.textBaseline='middle';
+            ctx.fillText(label, props.x, (props.y+props.base)/2);
+          } else {
+            ctx.fillStyle=colorOut; ctx.textAlign='center'; ctx.textBaseline='bottom';
+            ctx.fillText(label, props.x, props.y-4);
+          }
+        }
+      });
+    });
+    ctx.restore();
+  }
+};
+Chart.register(valueLabelsPlugin);
+
+// Plugin: mostra o total da barra empilhada (soma de todos os datasets) acima de cada coluna
+const totalLabelsPlugin = {
+  id: 'totalLabels',
+  afterDatasetsDraw(chart, args, opts) {
+    if (!opts || !opts.enabled) return;
+    const { ctx } = chart;
+    const dsCount = chart.data.datasets.length;
+    if (dsCount === 0) return;
+    const n = chart.data.labels.length;
+    const formatter = opts.formatter || (v => v);
+    ctx.save();
+    ctx.font = "700 10px 'Segoe UI', sans-serif";
+    ctx.fillStyle = opts.color || '#2B1E5C';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    for (let i = 0; i < n; i++) {
+      let total = 0;
+      let minY = Infinity, anyX = null;
+      for (let d = 0; d < dsCount; d++) {
+        const meta = chart.getDatasetMeta(d);
+        if (meta.hidden) continue;
+        const val = chart.data.datasets[d].data[i];
+        if (typeof val === 'number') total += val;
+        const el = meta.data[i];
+        if (el) { anyX = el.x; if (el.y < minY) minY = el.y; }
+      }
+      if (total <= 0 || minY === Infinity || anyX === null) continue;
+      ctx.fillText(formatter(total), anyX, minY - 6);
+    }
+    ctx.restore();
+  }
+};
+Chart.register(totalLabelsPlugin);
+
+const st=D.cotacoes.status;
+const taxaAprov=(st['Sim']/(st['Sim']+st['Não'])*100).toFixed(0);
+let totDocs=0; Object.values(D.docs.meses).forEach(m=>Object.values(m).forEach(t=>totDocs+=t.qtd));
+const cards=[
+  {v:taxaAprov+'%', l:'Taxa de aprovação de cotações (decididas: '+(st['Sim']+st['Não'])+')'},
+  {v:D.cotacoes.lead_medio_sol_rec+' dias', l:'Lead time médio solicitação → recebimento de proposta'},
+  {v:totDocs, l:'Documentos regulatórios processados (2026)'},
+  {v:D.notif_vig.total, l:'Notificações vigentes (anuídas)'},
+  {v:D.notif_vig.produtos, l:'Produtos distintos notificados'},
+  {v:D.estab.n_proximos, l:'Estudos de estabilidade em andamento'},
+  {v:D.rev_arte.pct_com_retrabalho+'%', l:'Artes que precisaram de mais de 1 revisão'}
+];
+document.getElementById('kpicards').innerHTML=cards.map(c=>`<div class="kpi"><div class="v">${c.v}</div><div class="l">${c.l}</div></div>`).join('');
+
+const TIPOS=D.docs.tipos, ordemMes=D.docs.ordem;
+const tipoCor={'Dizeres de Rotulagem':ROXO,'Correção de Arte':ROXO2,'Homologação de MP':AMAR,'Avaliação de Risco':VERDE,'Especificação Técnica':VERM};
+const selMes=document.getElementById('fMes');
+selMes.innerHTML='<option value="__todos">Todos os meses</option>'+ordemMes.filter(m=>m!=='sem data').map(m=>`<option value="${m}">${m.charAt(0).toUpperCase()+m.slice(1)}</option>`).join('');
+
+function dadosDoc(mes){
+  const qtd={}, sla={};
+  TIPOS.forEach(t=>{qtd[t]=0; sla[t]=null;});
+  if(mes==='__todos'){
+    const slaAcc={}; TIPOS.forEach(t=>slaAcc[t]={s:0,n:0});
+    ordemMes.forEach(m=>{const dm=D.docs.meses[m]||{};TIPOS.forEach(t=>{if(dm[t]){qtd[t]+=dm[t].qtd; if(dm[t].sla!=null){slaAcc[t].s+=dm[t].sla*dm[t].qtd; slaAcc[t].n+=dm[t].qtd;}}});});
+    TIPOS.forEach(t=>{sla[t]=slaAcc[t].n? +(slaAcc[t].s/slaAcc[t].n).toFixed(2):null;});
+  } else {
+    const dm=D.docs.meses[mes]||{};
+    TIPOS.forEach(t=>{if(dm[t]){qtd[t]=dm[t].qtd; sla[t]=dm[t].sla;}});
+  }
+  return {qtd,sla};
+}
+let chDocQtd, chDocSla;
+const chDocQtd_ctx=document.getElementById('chDocQtd'), chDocSla_ctx=document.getElementById('chDocSla');
+function renderDocs(){
+  const mes=selMes.value; const dd=dadosDoc(mes);
+  const labels=TIPOS, cores=TIPOS.map(t=>tipoCor[t]);
+  const tot=TIPOS.reduce((a,t)=>a+dd.qtd[t],0);
+  document.getElementById('docResumo').textContent=tot+' documentos no período selecionado';
+  const cfgQ={type:'bar',data:{labels,datasets:[{data:TIPOS.map(t=>dd.qtd[t]),backgroundColor:cores,borderRadius:6}]},
+    options:{maintainAspectRatio:false,layout:{padding:{top:16}},plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.raw+' documentos'}},valueLabels:{formatter:v=>v}},scales:{y:{beginAtZero:true}}}};
+  const cfgS={type:'bar',data:{labels,datasets:[{data:TIPOS.map(t=>dd.sla[t]),backgroundColor:cores,borderRadius:6}]},
+    options:{maintainAspectRatio:false,layout:{padding:{top:16}},plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.raw==null?'sem dado':c.raw+' dias'}},valueLabels:{formatter:v=>v==null?'':v.toFixed(1)+'d'}},scales:{y:{beginAtZero:true,title:{display:true,text:'dias'}}}}};
+  if(chDocQtd)chDocQtd.destroy(); if(chDocSla)chDocSla.destroy();
+  chDocQtd=new Chart(chDocQtd_ctx,cfgQ); chDocSla=new Chart(chDocSla_ctx,cfgS);
+}
+selMes.addEventListener('change',renderDocs);
+renderDocs();
+
+// Revisões de arte por produto/cliente
+const rev = D.rev_arte;
+document.getElementById('revResumo').textContent = rev.total_revisoes+' revisões em '+rev.total_produtos_cliente+' artes (média '+rev.media_revisoes+' por arte) · '+rev.pct_com_retrabalho+'% precisou de retrabalho';
+const distOrdem=['1','2','3','4','5+'];
+const distVals=distOrdem.map(k=>rev.distribuicao[k]||0);
+new Chart(chRevDist,{type:'bar',data:{labels:distOrdem.map(k=>k+(k==='1'?' revisão':' revisões')),datasets:[{data:distVals,backgroundColor:[VERDE,AMAR,ROXO2,ROXO,VERM],borderRadius:6}]},
+  options:{maintainAspectRatio:false,layout:{padding:{top:16}},plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.raw+' artes'}},valueLabels:{formatter:v=>v}},scales:{y:{beginAtZero:true}}}});
+function fmtDataBR2(iso){ if(!iso) return '—'; const [y,m,dd]=iso.split('-'); return dd+'/'+m+'/'+y; }
+document.querySelector('#tbRevArte tbody').innerHTML = rev.ranking.slice(0,15).map(r=>
+  `<tr><td>${r.produto}</td><td>${r.cliente}</td><td><b>${r.n_revisoes}</b></td><td style="font-size:11px;color:#7a7593">${fmtDataBR2(r.primeira_entrada)} – ${fmtDataBR2(r.ultima_entrada)}</td></tr>`
+).join('');
+
+// Fluxo de caixa - gastos com produtos de catálogo
+const fmtBRL = v => 'R$ ' + (Math.abs(v)>=1000 ? (v/1000).toLocaleString('pt-BR',{maximumFractionDigits:1})+' mil' : v.toLocaleString('pt-BR',{maximumFractionDigits:0}));
+const mesesFluxo = Object.keys(D.fluxo.meses);
+const labColorsFluxo = {CEIMIC:ROXO, CQA:VERDE, EUROFINS:AMAR, CBO:ROXO3, CLS:VERM, PRIME:ESC};
+new Chart(chFluxo, {type:'bar', data:{labels:mesesFluxo.map(m=>{const[y,mm]=m.split('-');return mm+'/'+y.slice(2);}),
+  datasets:D.fluxo.labs.map(l=>({label:l, data:mesesFluxo.map(m=>D.fluxo.meses[m][l]||0), backgroundColor:labColorsFluxo[l]||ROXO2, stack:'s', borderRadius:3}))},
+  options:{maintainAspectRatio:false, layout:{padding:{top:24}}, plugins:{legend:{position:'bottom'}, tooltip:{callbacks:{label:c=>c.dataset.label+': '+fmtBRL(c.raw),
+      footer:items=>{let t=0; items.forEach(i=>t+=i.parsed.y); return 'Total do mês: '+fmtBRL(t);}}},
+    valueLabels:{formatter:v=>v?(Math.abs(v)>=1000?(v/1000).toFixed(0)+'k':v.toFixed(0)):''},
+    totalLabels:{enabled:true, formatter:v=>fmtBRL(v)}},
+    scales:{x:{stacked:true}, y:{stacked:true, ticks:{callback:v=>fmtBRL(v)}}}}});
+
+// Gastos com clientes (fonte: Gastos Reais)
+const gc = D.gastos_clientes;
+document.getElementById('gcResumo').textContent = fmtBRL(gc.total_pago)+' pagos'+(gc.total_a_vencer?' + '+fmtBRL(gc.total_a_vencer)+' a vencer':'')+' · '+gc.n_registros+' lançamentos · '+gc.ranking.length+' clientes';
+const gcLabels = gc.ranking.map(x=>x[0]), gcVals = gc.ranking.map(x=>x[1]);
+const gcPaleta=[ROXO,ROXO2,AMAR,VERDE,VERM,ROXO3,ESC];
+new Chart(chGastosCli, {type:'bar', data:{labels:gcLabels, datasets:[{data:gcVals, backgroundColor:gcLabels.map((_,i)=>gcPaleta[i%gcPaleta.length]), borderRadius:6}]},
+  options:{maintainAspectRatio:false, indexAxis:'y', plugins:{legend:{display:false}, tooltip:{callbacks:{label:c=>fmtBRL(c.raw)}},
+    valueLabels:{formatter:v=>fmtBRL(v)}},
+    scales:{x:{ticks:{callback:v=>fmtBRL(v)}}}}});
+document.querySelector('#tbGastosCli tbody').innerHTML = gc.registros.map(g=>{
+  const statusTag = g.status==='Pago' ? '' : ' <span class="tag t-amar">'+g.status+'</span>';
+  return `<tr><td>${g.cliente}</td><td>${g.lab}</td><td>${fmtD(g.data_pagamento)}${statusTag}</td><td>${fmtBRL(g.valor)}</td><td style="font-size:11px;color:#7a7593">${g.descricao}</td></tr>`;
+}).join('');
+
+const nv=D.notif_vig;
+document.getElementById('nvResumo').textContent=nv.total+' notificações · '+nv.produtos+' produtos distintos';
+const dims=[['embalagem','Apresentação'],['marca','Marca'],['cliente','Cliente'],['peso','Peso líquido']];
+const pillsEl=document.getElementById('nvPills');
+pillsEl.innerHTML=dims.map((d,i)=>`<span class="pill ${i===0?'on':''}" data-dim="${d[0]}">${d[1]}</span>`).join('');
+let chNV;
+function renderNV(dim){
+  const arr=nv[dim]; const labels=arr.map(x=>x[0]); const vals=arr.map(x=>x[1]);
+  const paleta=[ROXO,ROXO2,AMAR,VERDE,VERM,ROXO3,ESC,'#B8A6E0','#6FC6E0','#E0A6C4','#A6E0B8','#E0C6A6'];
+  const cores=labels.map((_,i)=>paleta[i%paleta.length]);
+  const horiz=labels.length>5;
+  if(chNV)chNV.destroy();
+  chNV=new Chart(chNotifVig,{type:'bar',data:{labels,datasets:[{data:vals,backgroundColor:cores,borderRadius:6}]},
+    options:{maintainAspectRatio:false,indexAxis:horiz?'y':'x',layout:{padding:{top:16}},plugins:{legend:{display:false},
+      tooltip:{callbacks:{label:c=>c.raw+' notificações ('+(c.raw/nv.total*100).toFixed(0)+'%)'}},
+      valueLabels:{formatter:v=>v}},
+      scales:{[horiz?'x':'y']:{beginAtZero:true}}}});
+}
+pillsEl.querySelectorAll('.pill').forEach(p=>p.addEventListener('click',()=>{
+  pillsEl.querySelectorAll('.pill').forEach(x=>x.classList.remove('on')); p.classList.add('on'); renderNV(p.dataset.dim);
+}));
+renderNV('embalagem');
+
+// Tabela detalhada de notificações vigentes
+function fmtD(iso){ if(!iso) return '—'; const [y,m,d]=iso.split('-'); return d+'/'+m+'/'+y; }
+document.getElementById('nvProdUnicos').textContent = nv.produtos;
+document.getElementById('nvSaboresUnicos').textContent = nv.total_sabores;
+document.getElementById('nvPesosUnicos').textContent = nv.total_pesos;
+document.querySelector('#tbPorProduto tbody').innerHTML = nv.por_produto.map(p=>
+  `<tr><td>${p.produto}</td><td>${p.n_sabores}</td><td>${p.sabores.join(', ')}</td><td>${p.n_pesos}</td><td>${p.pesos.join(', ')}</td><td>${p.n_notificacoes}</td></tr>`
+).join('');
+function renderTabelaNV(filtro){
+  const f=(filtro||'').trim().toLowerCase();
+  const rows = nv.lista.filter(n=> !f || [n.produto,n.sabor,n.marca,n.cliente,n.processo].join(' ').toLowerCase().includes(f));
+  document.getElementById('nvTabResumo').textContent = rows.length+' de '+nv.lista.length+' registros exibidos';
+  document.querySelector('#tbNotifVig tbody').innerHTML = rows.map(n=>
+    `<tr><td>${n.produto}</td><td>${n.sabor||'—'}</td><td>${n.marca||'—'}</td><td>${n.cliente||'—'}</td><td>${n.validade_meses?n.validade_meses+' meses':'—'}</td><td>${fmtD(n.data_vigencia)}</td><td>${n.processo||'—'}</td></tr>`
+  ).join('');
+}
+document.getElementById('nvBusca').addEventListener('input', e=>renderTabelaNV(e.target.value));
+renderTabelaNV('');
+
+const ordemT=['T0','T3 Acelerado','T3 Longa','T6 Acelerado','T6 Longa','T9','T10','T11','T12','T14','T15','T16','T18','T24'];
+const tempos={...D.estab.tempos};
+if(tempos['T3 Acelerada']){tempos['T3 Acelerado']=(tempos['T3 Acelerado']||0)+tempos['T3 Acelerada'];}
+const tL=ordemT.filter(t=>tempos[t]);
+new Chart(chTempos,{type:'bar',data:{labels:tL,datasets:[{data:tL.map(t=>tempos[t]),backgroundColor:ROXO,borderRadius:5}]},
+  options:{maintainAspectRatio:false,layout:{padding:{top:16}},plugins:{legend:{display:false},valueLabels:{formatter:v=>v}},scales:{y:{beginAtZero:true}}}});
+
+function fmtDataBR(iso){ if(!iso) return '—'; const [y,m,dd]=iso.split('-'); return dd+'/'+m+'/'+y; }
+document.getElementById('nproxResumo').textContent = D.estab.n_proximos;
+document.querySelector('#tbProxLaudos tbody').innerHTML = D.estab.proximos_laudos.map(l=>
+  `<tr><td>${l.produto}</td><td>${l.lab}</td><td>${l.tempo}</td><td><b>${fmtDataBR(l.previsao)}</b></td></tr>`
+).join('');
+
+const labs=Object.keys(D.qualidade_lab);
+const stOrder=['Aprovado','Ap com Ressalvas','Reanálise','Reprovado'], stCor=[VERDE,AMAR,ROXO2,VERM];
+new Chart(chQual,{type:'bar',data:{labels:labs,datasets:stOrder.map((s,i)=>({label:s,
+  data:labs.map(l=>{const q=D.qualidade_lab[l];const tot=Object.values(q).reduce((a,b)=>a+b,0);return (q[s]||0)/tot*100;}),backgroundColor:stCor[i],stack:'s'}))},
+  options:{maintainAspectRatio:false,plugins:{legend:{position:'bottom'},
+    tooltip:{callbacks:{label:c=>{const q=D.qualidade_lab[c.label];return c.dataset.label+': '+(q[c.dataset.label]||0)+' ('+c.raw.toFixed(0)+'%)';}}},
+    valueLabels:{formatter:v=>v.toFixed(0)+'%'}},
+    scales:{x:{stacked:true},y:{stacked:true,max:100,ticks:{callback:v=>v+'%'}}}}});
+
+document.querySelector('#tbProb tbody').innerHTML=Object.entries(D.prob_prod)
+  .map(([p,s])=>[p,s['Reanálise']||0,s['Reprovado']||0])
+  .sort((a,b)=>(b[2]*2+b[1])-(a[2]*2+a[1]))
+  .map(r=>`<tr><td>${r[0]}</td><td>${r[1]||''}</td><td>${r[2]?'<span class="tag t-verm">'+r[2]+'</span>':''}</td></tr>`).join('');
+</script>
+</body>
+</html>
