@@ -64,7 +64,7 @@ TOKEN_FILE = _resolve("DASH_TOKEN_PATH", TOKEN_REL, "/sessions/exciting-pensive-
 KPIS_JSON_PATH = os.path.join(SCRIPT_DIR, "kpis_all.json")
 
 GITHUB_REPO = "github.com/luanalante-byte/Dashboard-Regulat-rio.git"
-CLONE_DIR = "/tmp/dashboard_repo_autoupdate_v2"
+CLONE_DIR = "/tmp/dashboard_repo_autoupdate_run2"
 
 
 def log(msg):
