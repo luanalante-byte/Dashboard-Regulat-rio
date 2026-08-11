@@ -13,7 +13,13 @@ Passos:
 Uso:
     python3 update_dashboard.py
 
-Variaveis de ambiente / caminhos podem ser ajustados nas constantes abaixo.
+IMPORTANTE: os caminhos abaixo apontam para dentro do mount da sandbox
+("/sessions/<id-da-sessao>/mnt/..."), e o <id-da-sessao> muda a cada nova
+sessao do Cowork. Por isso os caminhos SEMPRE devem ser passados via
+variaveis de ambiente (DASH_XLSX_PATH e DASH_HTML_PATH) resolvidas no
+inicio de cada execucao (ver instrucoes da skill). Os valores default
+abaixo servem apenas de fallback/documentacao e provavelmente NAO existirao
+em uma sessao nova.
 """
 import json
 import os
@@ -28,10 +34,33 @@ sys.path.insert(0, SCRIPT_DIR)
 from extract_kpis import build  # noqa: E402
 from inject_data import inject  # noqa: E402
 
-# ---- Caminhos (ajustar se a estrutura de pastas mudar) ----
-XLSX_PATH = "/sessions/exciting-pensive-cerf/mnt/1A. Lista Mestre de Produtos - PRONUTRITION/LISTA MESTRE DE PRODUTOS - PRONUTRITION.xlsx"
-DASHBOARD_HTML_PATH = "/sessions/exciting-pensive-cerf/mnt/20. Time Regulatórios/8. INDICADORES/D. Dashboards/Dashboard Regulatórios - RASCUNHO Novos Indicadores.html"
-TOKEN_FILE = "/sessions/exciting-pensive-cerf/mnt/20. Time Regulatórios/8. INDICADORES/D. Dashboards/.config/github_token.txt"
+# ---- Caminhos: SEMPRE fornecidos via variavel de ambiente pela skill ----
+# Nomes de pasta usados para localizar o mount, caso as env vars nao sejam passadas:
+XLSX_REL = "1A. Lista Mestre de Produtos - PRONUTRITION/LISTA MESTRE DE PRODUTOS - PRONUTRITION.xlsx"
+HTML_REL = "20. Time Regulatórios/8. INDICADORES/D. Dashboards/Dashboard Regulatórios - RASCUNHO Novos Indicadores.html"
+TOKEN_REL = "20. Time Regulatórios/8. INDICADORES/D. Dashboards/.config/github_token.txt"
+
+
+def _resolve(env_var, rel_path, fallback):
+    val = os.environ.get(env_var)
+    if val:
+        return val
+    if os.path.exists(fallback):
+        return fallback
+    # tenta descobrir o mount atual pesquisando /sessions/*/mnt/<rel_path>
+    import glob
+    matches = glob.glob(f"/sessions/*/mnt/{rel_path}")
+    if matches:
+        return matches[0]
+    raise RuntimeError(
+        f"Nao foi possivel localizar '{rel_path}'. Defina a variavel de ambiente {env_var} "
+        f"com o caminho correto para esta sessao (veja a secao 'Shell access' do system prompt)."
+    )
+
+
+XLSX_PATH = _resolve("DASH_XLSX_PATH", XLSX_REL, "/sessions/exciting-pensive-cerf/mnt/" + XLSX_REL)
+DASHBOARD_HTML_PATH = _resolve("DASH_HTML_PATH", HTML_REL, "/sessions/exciting-pensive-cerf/mnt/" + HTML_REL)
+TOKEN_FILE = _resolve("DASH_TOKEN_PATH", TOKEN_REL, "/sessions/exciting-pensive-cerf/mnt/" + TOKEN_REL)
 KPIS_JSON_PATH = os.path.join(SCRIPT_DIR, "kpis_all.json")
 
 GITHUB_REPO = "github.com/luanalante-byte/Dashboard-Regulat-rio.git"
