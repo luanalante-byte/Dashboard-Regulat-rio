@@ -675,6 +675,12 @@ def build(xlsx_path, today=None):
     notif_vig = _extract_notif_vig(wb)
     gastos_clientes = _extract_gastos_clientes(wb)
 
+    agora = datetime.now()
+    meta = {
+        "atualizado_em": agora.strftime("%d/%m/%Y %H:%M"),
+        "atualizado_em_iso": agora.isoformat(),
+    }
+
     return {
         "cotacoes": cotacoes,
         "fluxo": fluxo,
@@ -685,6 +691,7 @@ def build(xlsx_path, today=None):
         "notif_vig": notif_vig,
         "gastos_clientes": gastos_clientes,
         "rev_arte": rev_arte,
+        "meta": meta,
     }
 
 
