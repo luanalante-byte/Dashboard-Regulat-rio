@@ -258,6 +258,10 @@ def _extract_estab_qualidade_prob(wb, today):
         c_envio = _col_index(header, "Envio da amostra")
     except ValueError:
         c_envio = None
+    try:
+        c_inicio = _col_index(header, "Início de estudo")
+    except ValueError:
+        c_inicio = None
 
     tempos = Counter()
     proximos = []
@@ -279,6 +283,7 @@ def _extract_estab_qualidade_prob(wb, today):
         prev = row[c_prev] if c_prev < len(row) else None
         prev_date = _to_date(prev)
         recebimento_date = _to_date(row[c_recebimento]) if c_recebimento < len(row) else None
+        inicio_date = _to_date(row[c_inicio]) if (c_inicio is not None and c_inicio < len(row)) else None
 
         # Algumas linhas sao duplicadas na planilha (mesmo produto/lab/tempo
         # de estudo/previsao/recebimento repetidos). Sem essa deduplicacao,
@@ -301,14 +306,22 @@ def _extract_estab_qualidade_prob(wb, today):
         # taxa de atraso e tempo medio de entrega de laudo, por laboratorio:
         # ambos calculados pela diferenca entre "Previsao de laudo" e
         # "Recebimento de laudo" (somente laudos ja recebidos, com as duas
-        # datas preenchidas).
-        if lab_norm and recebido == "Sim" and prev_date and recebimento_date:
+        # datas preenchidas). Descarta registros com inconsistencia de data
+        # (recebimento anterior ao inicio do estudo, o que e cronologicamente
+        # impossivel e indica erro de preenchimento na planilha).
+        data_valida = not (inicio_date and recebimento_date and recebimento_date < inicio_date)
+        if lab_norm and recebido == "Sim" and prev_date and recebimento_date and data_valida:
             acc = lab_sla_acc[lab_norm]
             acc["n_avaliados"] += 1
             delta = (recebimento_date - prev_date).days
             if delta > 0:
                 acc["n_atrasados"] += 1
-            acc["_entregas"].append(delta)
+            # Usa a diferenca em modulo: o "tempo medio de entrega" representa
+            # o quanto, em media, o laudo chega distante da previsao (atrasado
+            # ou adiantado), sem que atrasos e adiantamentos se cancelem e
+            # produzam uma media proxima de zero ou negativa (o que nao faz
+            # sentido como leitura de "tempo de entrega").
+            acc["_entregas"].append(abs(delta))
 
         if recebido != "Sim" and prev_date:
             proximos.append({
@@ -338,14 +351,10 @@ def _extract_estab_qualidade_prob(wb, today):
 
     qualidade_lab_out = {lab: dict(counter) for lab, counter in qualidade_lab.items()}
 
-    # So exibe laboratorios com uma quantidade minima de laudos avaliados;
-    # amostras muito pequenas (ex.: 2-3 laudos) geram taxas/medias que nao
-    # representam de forma confiavel o desempenho do laboratorio.
-    MIN_LAUDOS_LAB_SLA = 5
     lab_sla = {}
     for lab, acc in lab_sla_acc.items():
         n = acc["n_avaliados"]
-        if n < MIN_LAUDOS_LAB_SLA:
+        if n == 0:
             continue
         entregas = acc["_entregas"]
         lab_sla[lab] = {
