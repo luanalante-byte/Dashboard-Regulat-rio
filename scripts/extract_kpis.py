@@ -263,25 +263,40 @@ def _extract_estab_qualidade_prob(wb, today):
     proximos = []
     qualidade_lab = defaultdict(Counter)
     lab_sla_acc = defaultdict(lambda: {"n_avaliados": 0, "n_atrasados": 0, "_entregas": []})
+    seen_rows = set()
 
     for row in _iter_data_rows(ws, header_idx):
         prod = row[c_prod] if c_prod < len(row) else None
         if not prod:
             continue
         tempo = row[c_tempo] if c_tempo < len(row) else None
-        if tempo:
-            tempos[str(tempo).strip()] += 1
 
         lab = row[c_lab] if c_lab < len(row) else None
         status = row[c_status] if c_status < len(row) else None
         lab_norm = str(lab).strip().upper() if lab else None
-        if lab_norm and status:
-            qualidade_lab[lab_norm][str(status).strip()] += 1
 
         recebido = row[c_recebido] if c_recebido < len(row) else None
         prev = row[c_prev] if c_prev < len(row) else None
         prev_date = _to_date(prev)
         recebimento_date = _to_date(row[c_recebimento]) if c_recebimento < len(row) else None
+
+        # Algumas linhas sao duplicadas na planilha (mesmo produto/lab/tempo
+        # de estudo/previsao/recebimento repetidos). Sem essa deduplicacao,
+        # elas inflam contagens e distorcem medias (ex.: SLA por laboratorio
+        # com poucas amostras).
+        row_key = (
+            str(prod).strip(), lab_norm, str(tempo).strip() if tempo else None,
+            prev_date, recebimento_date, recebido, str(status).strip() if status else None,
+        )
+        if row_key in seen_rows:
+            continue
+        seen_rows.add(row_key)
+
+        if tempo:
+            tempos[str(tempo).strip()] += 1
+
+        if lab_norm and status:
+            qualidade_lab[lab_norm][str(status).strip()] += 1
 
         # taxa de atraso e tempo medio de entrega de laudo, por laboratorio:
         # ambos calculados pela diferenca entre "Previsao de laudo" e
@@ -323,9 +338,15 @@ def _extract_estab_qualidade_prob(wb, today):
 
     qualidade_lab_out = {lab: dict(counter) for lab, counter in qualidade_lab.items()}
 
+    # So exibe laboratorios com uma quantidade minima de laudos avaliados;
+    # amostras muito pequenas (ex.: 2-3 laudos) geram taxas/medias que nao
+    # representam de forma confiavel o desempenho do laboratorio.
+    MIN_LAUDOS_LAB_SLA = 5
     lab_sla = {}
     for lab, acc in lab_sla_acc.items():
         n = acc["n_avaliados"]
+        if n < MIN_LAUDOS_LAB_SLA:
+            continue
         entregas = acc["_entregas"]
         lab_sla[lab] = {
             "n_avaliados": n,
