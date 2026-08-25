@@ -245,19 +245,24 @@ def _extract_estab_qualidade_prob(wb, today):
     ws = wb["Controle Estabilidade "]
     header_idx, header = _find_header_row(
         ws, ["Descrição - DATASUL", "Laboratório", "Tempo do estudo", "Previsão de laudo",
-             "Recebimento de laudo", "Laudo recebido", "STATUS"]
+             "Recebimento de laudo", "Laudo recebido", "STATUS", "Envio da amostra"]
     )
     c_prod = _col_index(header, "Descrição - DATASUL")
     c_lab = _col_index(header, "Laboratório")
     c_tempo = _col_index(header, "Tempo do estudo")
     c_prev = _col_index(header, "Previsão de laudo")
+    c_recebimento = _col_index(header, "Recebimento de laudo")
     c_recebido = _col_index(header, "Laudo recebido")
     c_status = _col_index(header, "STATUS")
+    try:
+        c_envio = _col_index(header, "Envio da amostra")
+    except ValueError:
+        c_envio = None
 
     tempos = Counter()
     proximos = []
     qualidade_lab = defaultdict(Counter)
-    prob_prod_all = defaultdict(Counter)
+    lab_sla_acc = defaultdict(lambda: {"n_avaliados": 0, "n_atrasados": 0, "_entregas": []})
 
     for row in _iter_data_rows(ws, header_idx):
         prod = row[c_prod] if c_prod < len(row) else None
@@ -269,14 +274,26 @@ def _extract_estab_qualidade_prob(wb, today):
 
         lab = row[c_lab] if c_lab < len(row) else None
         status = row[c_status] if c_status < len(row) else None
-        if lab and status:
-            lab_norm = str(lab).strip().upper()
+        lab_norm = str(lab).strip().upper() if lab else None
+        if lab_norm and status:
             qualidade_lab[lab_norm][str(status).strip()] += 1
-            prob_prod_all[str(prod).strip()][str(status).strip()] += 1
 
         recebido = row[c_recebido] if c_recebido < len(row) else None
         prev = row[c_prev] if c_prev < len(row) else None
         prev_date = _to_date(prev)
+        recebimento_date = _to_date(row[c_recebimento]) if c_recebimento < len(row) else None
+        envio_date = _to_date(row[c_envio]) if (c_envio is not None and c_envio < len(row)) else None
+
+        # taxa de atraso e tempo medio de entrega de laudo, por laboratorio
+        # (somente laudos ja recebidos, com previsao e data de recebimento).
+        if lab_norm and recebido == "Sim" and prev_date and recebimento_date:
+            acc = lab_sla_acc[lab_norm]
+            acc["n_avaliados"] += 1
+            if recebimento_date > prev_date:
+                acc["n_atrasados"] += 1
+            if envio_date:
+                acc["_entregas"].append((recebimento_date - envio_date).days)
+
         if recebido != "Sim" and prev_date:
             proximos.append({
                 "produto": str(prod).strip(),
@@ -303,12 +320,17 @@ def _extract_estab_qualidade_prob(wb, today):
 
     qualidade_lab_out = {lab: dict(counter) for lab, counter in qualidade_lab.items()}
 
-    prob_prod = {}
-    for prod, counter in prob_prod_all.items():
-        if counter.get("Reanálise", 0) > 0 or counter.get("Reprovado", 0) > 0:
-            prob_prod[prod] = dict(counter)
+    lab_sla = {}
+    for lab, acc in lab_sla_acc.items():
+        n = acc["n_avaliados"]
+        entregas = acc["_entregas"]
+        lab_sla[lab] = {
+            "n_avaliados": n,
+            "taxa_atraso": round(100 * acc["n_atrasados"] / n, 1) if n else 0.0,
+            "tempo_medio_entrega": round(statistics.mean(entregas), 1) if entregas else None,
+        }
 
-    return estab, qualidade_lab_out, prob_prod
+    return estab, qualidade_lab_out, lab_sla
 
 
 # --------------------------------------------------------------------------
@@ -329,7 +351,7 @@ def _extract_docs_and_revarte(wb):
     c_saida = _col_index(header, "DATA SAÍDA")
     c_sla = _col_index(header, "SLA")
 
-    EXCLUDED_TIPOS = {"ficha comercial", "notificação", "notificacao", "fechamento de arte"}
+    EXCLUDED_TIPOS = {"notificação", "notificacao", "fechamento de arte", "especificação técnica", "especificacao tecnica"}
 
     meses = defaultdict(lambda: defaultdict(lambda: {"qtd": 0, "_slas": []}))
     tipos_seen = set()
@@ -402,9 +424,13 @@ def _extract_docs_and_revarte(wb):
 
     for (prod, cliente), entradas in arte_group.items():
         n = len(entradas)
-        total_revisoes += n
         versoes = [e["versao"] for e in entradas if e["versao"] is not None]
         max_versao = max(versoes) if versoes else n
+        # "n_revisoes" considera apenas a quantidade da ultima revisao (maior
+        # numero de VERSAO ja registrado para este produto/cliente), e nao a
+        # soma de todas as entradas historicas.
+        n_revisoes = max_versao
+        total_revisoes += n_revisoes
         datas = [e["entrada"] for e in entradas if e["entrada"]]
         primeira = min(datas).isoformat() if datas else None
         ultima = max(datas).isoformat() if datas else None
@@ -414,20 +440,20 @@ def _extract_docs_and_revarte(wb):
             "produto": prod,
             "cliente": cliente,
             "marca": marca,
-            "n_revisoes": n,
+            "n_revisoes": n_revisoes,
             "max_versao": max_versao,
             "primeira_entrada": primeira,
             "ultima_entrada": ultima,
         })
 
         if cliente:
-            cliente_counter[cliente] += n
+            cliente_counter[cliente] += n_revisoes
             cliente_prod[cliente].add(prod)
         if marca:
-            marca_counter[marca] += n
+            marca_counter[marca] += n_revisoes
             marca_prod[marca].add(prod)
 
-        bucket = "5+" if n >= 5 else str(n)
+        bucket = "5+" if n_revisoes >= 5 else str(n_revisoes)
         distribuicao[bucket] += 1
 
     ranking.sort(key=lambda r: r["n_revisoes"], reverse=True)
@@ -502,6 +528,7 @@ def _extract_notif_vig(wb):
     all_sabores = set()
     all_pesos = set()
 
+    seen_keys = set()
     for row in _iter_data_rows(ws, header_idx):
         status = row[c_status] if c_status < len(row) else None
         if status is None or "ANU" not in str(status).upper():
@@ -521,6 +548,22 @@ def _extract_notif_vig(wb):
         processo = row[c_processo] if c_processo < len(row) else None
 
         produto_s = str(produto).strip()
+
+        # A identidade de uma notificacao vigente e dada pela combinacao de
+        # numero de processo + produto + sabor + embalagem + peso liquido.
+        # Linhas duplicadas dessa combinacao (ex.: multiplas atualizacoes de
+        # status para o mesmo registro) sao contadas uma unica vez.
+        dedup_key = (
+            str(processo).strip() if processo else "",
+            produto_s,
+            str(sabor).strip() if sabor else "",
+            str(embalagem).strip() if embalagem else "",
+            peso or "",
+        )
+        if dedup_key in seen_keys:
+            continue
+        seen_keys.add(dedup_key)
+
         lista.append({
             "produto": produto_s,
             "sabor": str(sabor).strip() if sabor else "",
@@ -670,7 +713,7 @@ def build(xlsx_path, today=None):
 
     cotacoes = _extract_cotacoes(wb)
     fluxo = _extract_fluxo(wb)
-    estab, qualidade_lab, prob_prod = _extract_estab_qualidade_prob(wb, today)
+    estab, qualidade_lab, lab_sla = _extract_estab_qualidade_prob(wb, today)
     docs, rev_arte = _extract_docs_and_revarte(wb)
     notif_vig = _extract_notif_vig(wb)
     gastos_clientes = _extract_gastos_clientes(wb)
@@ -686,7 +729,7 @@ def build(xlsx_path, today=None):
         "fluxo": fluxo,
         "estab": estab,
         "qualidade_lab": qualidade_lab,
-        "prob_prod": prob_prod,
+        "lab_sla": lab_sla,
         "docs": docs,
         "notif_vig": notif_vig,
         "gastos_clientes": gastos_clientes,
