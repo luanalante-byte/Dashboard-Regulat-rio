@@ -282,17 +282,18 @@ def _extract_estab_qualidade_prob(wb, today):
         prev = row[c_prev] if c_prev < len(row) else None
         prev_date = _to_date(prev)
         recebimento_date = _to_date(row[c_recebimento]) if c_recebimento < len(row) else None
-        envio_date = _to_date(row[c_envio]) if (c_envio is not None and c_envio < len(row)) else None
 
-        # taxa de atraso e tempo medio de entrega de laudo, por laboratorio
-        # (somente laudos ja recebidos, com previsao e data de recebimento).
+        # taxa de atraso e tempo medio de entrega de laudo, por laboratorio:
+        # ambos calculados pela diferenca entre "Previsao de laudo" e
+        # "Recebimento de laudo" (somente laudos ja recebidos, com as duas
+        # datas preenchidas).
         if lab_norm and recebido == "Sim" and prev_date and recebimento_date:
             acc = lab_sla_acc[lab_norm]
             acc["n_avaliados"] += 1
-            if recebimento_date > prev_date:
+            delta = (recebimento_date - prev_date).days
+            if delta > 0:
                 acc["n_atrasados"] += 1
-            if envio_date:
-                acc["_entregas"].append((recebimento_date - envio_date).days)
+            acc["_entregas"].append(delta)
 
         if recebido != "Sim" and prev_date:
             proximos.append({
@@ -305,7 +306,9 @@ def _extract_estab_qualidade_prob(wb, today):
             })
 
     proximos.sort(key=lambda x: (not x["_futuro"], x["_delta"]))
-    n_proximos_total = len(proximos)
+    # "estudos de estabilidade em andamento" conta cada produto uma unica vez
+    # (nao o total de laudos pendentes, que pode ter varios por produto).
+    n_proximos_total = len({p["produto"] for p in proximos})
     proximos_out = [
         {k: v for k, v in p.items() if not k.startswith("_")}
         for p in proximos[:15]
@@ -426,10 +429,9 @@ def _extract_docs_and_revarte(wb):
         n = len(entradas)
         versoes = [e["versao"] for e in entradas if e["versao"] is not None]
         max_versao = max(versoes) if versoes else n
-        # "n_revisoes" considera apenas a quantidade da ultima revisao (maior
-        # numero de VERSAO ja registrado para este produto/cliente), e nao a
-        # soma de todas as entradas historicas.
-        n_revisoes = max_versao
+        # "n_revisoes" considera o numero total de correcoes (entradas) de
+        # Correcao de Arte registradas para este produto/cliente.
+        n_revisoes = n
         total_revisoes += n_revisoes
         datas = [e["entrada"] for e in entradas if e["entrada"]]
         primeira = min(datas).isoformat() if datas else None
@@ -531,9 +533,10 @@ def _extract_notif_vig(wb):
     seen_keys = set()
     for row in _iter_data_rows(ws, header_idx):
         status = row[c_status] if c_status < len(row) else None
-        if status is None or "ANU" not in str(status).upper():
-            continue
 
+        # Considera tambem produtos novos ainda sem status "ANUIDO" (ex.:
+        # "Aguardando", "No aguardo" ou status em branco), para que apareçam
+        # no indicador "por produto" assim que entram na planilha.
         produto = row[c_produto] if c_produto < len(row) else None
         if not produto:
             continue
