@@ -490,6 +490,39 @@ def _extract_docs_and_revarte(wb):
 
     ranking.sort(key=lambda r: r["n_revisoes"], reverse=True)
 
+    # ---- ranking por mes (top 25 artes com mais revisoes em cada mes) ----
+    # Mes de cada revisao = mes da "Data Entrada" daquela entrada individual de
+    # Correcao de Arte (uma mesma arte pode aparecer em varios meses).
+    mes_buckets = defaultdict(lambda: defaultdict(lambda: {"marca": "", "n": 0, "datas": []}))
+    for (prod, cliente), entradas in arte_group.items():
+        for e in entradas:
+            if not e["entrada"]:
+                continue
+            mkey = _month_name(e["entrada"])
+            info = mes_buckets[mkey][(prod, cliente)]
+            info["n"] += 1
+            info["datas"].append(e["entrada"])
+            if e["marca"] and not info["marca"]:
+                info["marca"] = e["marca"]
+
+    ranking_por_mes = {}
+    for mkey, prod_dict in mes_buckets.items():
+        itens = []
+        for (prod, cliente), info in prod_dict.items():
+            datas = sorted(info["datas"])
+            itens.append({
+                "produto": prod,
+                "cliente": cliente,
+                "marca": info["marca"],
+                "n_revisoes": info["n"],
+                "primeira_entrada": datas[0].isoformat(),
+                "ultima_entrada": datas[-1].isoformat(),
+            })
+        itens.sort(key=lambda r: r["n_revisoes"], reverse=True)
+        ranking_por_mes[mkey] = itens[:25]
+
+    ordem_meses_arte = [m for m in MESES_PT_ACENTO if m in mes_buckets]
+
     ranking_cliente = [
         {"nome": nome, "n_revisoes": n, "n_produtos": len(cliente_prod[nome])}
         for nome, n in cliente_counter.most_common()
@@ -511,6 +544,8 @@ def _extract_docs_and_revarte(wb):
         "pct_com_retrabalho": pct_com_retrabalho,
         "distribuicao": dict(distribuicao),
         "ranking": ranking,
+        "ranking_por_mes": ranking_por_mes,
+        "ordem_meses": ordem_meses_arte,
         "ranking_cliente": ranking_cliente,
         "ranking_marca": ranking_marca,
     }
