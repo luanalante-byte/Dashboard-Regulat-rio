@@ -704,9 +704,37 @@ def _extract_notif_vig(wb):
         })
     por_produto_out.sort(key=lambda x: x["n_notificacoes"], reverse=True)
 
+    # Novas notificacoes por mes, pelo mes da Data de vigencia (YYYY-MM, pois a
+    # serie cobre mais de um ano). Registros sem data ficam fora da serie.
+    novas_mes = Counter()
+    sem_data_vig = 0
+    for item in lista:
+        dv = item.get("data_vigencia")
+        if dv:
+            novas_mes[dv[:7]] += 1
+        else:
+            sem_data_vig += 1
+    ordem_novas = sorted(novas_mes)
+    # preenche meses sem nenhuma notificacao para a serie nao "pular" periodos
+    if ordem_novas:
+        y0, m0 = (int(x) for x in ordem_novas[0].split("-"))
+        y1, m1 = (int(x) for x in ordem_novas[-1].split("-"))
+        completo = []
+        y, m = y0, m0
+        while (y, m) <= (y1, m1):
+            completo.append("%04d-%02d" % (y, m))
+            m += 1
+            if m > 12:
+                m = 1
+                y += 1
+        ordem_novas = completo
+
     return {
         "total": len(lista),
         "produtos": len(por_produto),
+        "novas_por_mes": dict(novas_mes),
+        "ordem_novas_meses": ordem_novas,
+        "sem_data_vigencia": sem_data_vig,
         "embalagem": _top_counter(embalagem_c, top=5),
         "marca": _top_counter(marca_c, top=11),
         "cliente": _top_counter(cliente_c, top=11),
