@@ -171,6 +171,7 @@ def _extract_cotacoes(wb):
     c_sol = _col_index(header, "Solicitação")
     c_rec = _col_index(header, "Recebimento")
     c_val = _col_index(header, "Valor")
+    c_lab = _col_index(header, "Laboratório")
 
     status_count = Counter()
     valores_sum = defaultdict(float)
@@ -183,17 +184,27 @@ def _extract_cotacoes(wb):
 
     for row in _iter_data_rows(ws, header_idx):
         status = row[c_status] if c_status < len(row) else None
-        if status is None or str(status).strip() == "":
+        lab = row[c_lab] if c_lab < len(row) else None
+        d_sol = _to_date(row[c_sol]) if c_sol < len(row) else None
+        d_rec = _to_date(row[c_rec]) if c_rec < len(row) else None
+
+        # Uma linha vale como cotacao quando tem Data de Solicitacao ou
+        # Laboratorio preenchido. A coluna "Aprovado" em branco significa
+        # cotacao ainda sem decisao -> entra como "Pendente". Descartar essas
+        # linhas (comportamento antigo) esvaziava os meses mais recentes, que
+        # sao justamente os que ainda nao foram decididos.
+        if not d_sol and not (lab and str(lab).strip()):
             continue
-        status = str(status).strip()
+
+        if status is None or str(status).strip() == "":
+            status = "Pendente"
+        else:
+            status = str(status).strip()
         status_count[status] += 1
 
         val = _to_number(row[c_val]) if c_val < len(row) else None
         if val is not None:
             valores_sum[status] += val
-
-        d_sol = _to_date(row[c_sol]) if c_sol < len(row) else None
-        d_rec = _to_date(row[c_rec]) if c_rec < len(row) else None
         if d_sol:
             mkey_sol = _month_name(d_sol)
             por_mes[mkey_sol] += 1
