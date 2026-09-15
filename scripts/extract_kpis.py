@@ -175,6 +175,11 @@ def _extract_cotacoes(wb):
     status_count = Counter()
     valores_sum = defaultdict(float)
     leads = []
+    # quantidade de cotacoes por mes, pelo mes da Data de Solicitacao
+    por_mes = Counter()
+    por_mes_status = defaultdict(Counter)
+    por_mes_valor = defaultdict(float)
+    sem_data_sol = 0
 
     for row in _iter_data_rows(ws, header_idx):
         status = row[c_status] if c_status < len(row) else None
@@ -189,17 +194,32 @@ def _extract_cotacoes(wb):
 
         d_sol = _to_date(row[c_sol]) if c_sol < len(row) else None
         d_rec = _to_date(row[c_rec]) if c_rec < len(row) else None
+        if d_sol:
+            mkey_sol = _month_name(d_sol)
+            por_mes[mkey_sol] += 1
+            por_mes_status[mkey_sol][status] += 1
+            if val is not None:
+                por_mes_valor[mkey_sol] += val
+        else:
+            sem_data_sol += 1
         if d_sol and d_rec:
             delta = (d_rec - d_sol).days
             if 0 <= delta <= 365:
                 leads.append(delta)
 
     lead_medio = round(statistics.mean(leads), 2) if leads else 0.0
+    ordem_meses_cot = [m for m in MESES_PT_ACENTO if m in por_mes]
     return {
         "status": dict(status_count),
         "lead_medio_sol_rec": lead_medio,
         "lead_n": len(leads),
         "valores": {k: round(v, 2) for k, v in valores_sum.items()},
+        "por_mes": dict(por_mes),
+        "por_mes_status": {m: dict(c) for m, c in por_mes_status.items()},
+        "por_mes_valor": {m: round(v, 2) for m, v in por_mes_valor.items()},
+        "ordem_meses": ordem_meses_cot,
+        "sem_data_solicitacao": sem_data_sol,
+        "total": sum(status_count.values()),
     }
 
 
@@ -523,6 +543,14 @@ def _extract_docs_and_revarte(wb):
 
     ordem_meses_arte = [m for m in MESES_PT_ACENTO if m in mes_buckets]
 
+    # totais mensais completos (o ranking_por_mes acima e truncado no top 25,
+    # entao nao serve para medir volume do mes)
+    revisoes_por_mes = {
+        m: sum(info["n"] for info in prod_dict.values())
+        for m, prod_dict in mes_buckets.items()
+    }
+    artes_por_mes = {m: len(prod_dict) for m, prod_dict in mes_buckets.items()}
+
     ranking_cliente = [
         {"nome": nome, "n_revisoes": n, "n_produtos": len(cliente_prod[nome])}
         for nome, n in cliente_counter.most_common()
@@ -546,6 +574,8 @@ def _extract_docs_and_revarte(wb):
         "ranking": ranking,
         "ranking_por_mes": ranking_por_mes,
         "ordem_meses": ordem_meses_arte,
+        "revisoes_por_mes": revisoes_por_mes,
+        "artes_por_mes": artes_por_mes,
         "ranking_cliente": ranking_cliente,
         "ranking_marca": ranking_marca,
     }
