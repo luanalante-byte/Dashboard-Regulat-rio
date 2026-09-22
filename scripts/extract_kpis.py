@@ -17,6 +17,7 @@ Uso:
 
 import re
 import statistics
+import unicodedata
 from collections import defaultdict, Counter
 from datetime import datetime, date
 
@@ -272,6 +273,58 @@ def _extract_fluxo(wb):
 # 3) Estabilidade (funil + proximos laudos) + qualidade_lab + prob_prod
 # --------------------------------------------------------------------------
 
+def _norm_txt(v):
+    """minusculas, sem acentos e sem espacos duplicados."""
+    t = unicodedata.normalize("NFKD", str(v or "")).encode("ascii", "ignore").decode()
+    return " ".join(t.lower().split())
+
+
+# Categorias usadas para agrupar a coluna livre "Status Geral Estudo" da aba
+# Controle Estabilidade. A ordem importa: o primeiro criterio que casar vence
+# (ex.: "notificado, aguardando laudo t12" cai em "Notificado, aguardando
+# laudo", nao em "Notificado").
+def _cat_status_estudo(texto):
+    n = _norm_txt(texto)
+    if not n:
+        return "Sem status preenchido"
+    if "cancelad" in n:
+        return "Cancelado"
+    if "reprovad" in n:
+        return "Reprovado"
+    if "conclu" in n:
+        return "Concluído"
+    if "notificad" in n and "aguardando" in n:
+        return "Notificado, aguardando laudo"
+    if "notificad" in n and "aprovad" not in n:
+        return "Notificado"
+    if "aprovad" in n and "notifica" in n:
+        return "Aprovado, seguir notificação"
+    if "aguardando retorno" in n or "questionamento" in n:
+        return "Aguardando retorno do laboratório"
+    if "aguardando laudo" in n or "aguardando t" in n:
+        return "Aguardando laudo"
+    if "revisar" in n or "verificar" in n or "analises internas" in n:
+        return "Pendência interna"
+    return "Outros"
+
+
+# Ordem de exibicao das categorias no dashboard (das mais criticas para as
+# resolvidas). Categorias novas que nao estejam aqui entram no fim.
+ORDEM_STATUS_ESTUDO = [
+    "Aguardando laudo",
+    "Aguardando retorno do laboratório",
+    "Notificado, aguardando laudo",
+    "Pendência interna",
+    "Aprovado, seguir notificação",
+    "Notificado",
+    "Concluído",
+    "Reprovado",
+    "Cancelado",
+    "Outros",
+    "Sem status preenchido",
+]
+
+
 def _extract_estab_qualidade_prob(wb, today):
     ws = wb["Controle Estabilidade "]
     header_idx, header = _find_header_row(
@@ -293,12 +346,28 @@ def _extract_estab_qualidade_prob(wb, today):
         c_inicio = _col_index(header, "Início de estudo")
     except ValueError:
         c_inicio = None
+    try:
+        c_lote = _col_index(header, "Lote")
+    except ValueError:
+        c_lote = None
+    try:
+        c_cliente = _col_index(header, "Cliente")
+    except ValueError:
+        c_cliente = None
+    try:
+        c_status_geral = _col_index(header, "Status Geral Estudo", "Status Geral Estudos")
+    except ValueError:
+        c_status_geral = None
 
     tempos = Counter()
     proximos = []
     qualidade_lab = defaultdict(Counter)
     lab_sla_acc = defaultdict(lambda: {"n_avaliados": 0, "n_atrasados": 0, "_entregas": []})
     seen_rows = set()
+    # laudos vencidos: previsao ja passou e o laudo ainda nao foi recebido
+    atrasados = []
+    # status geral por estudo (um estudo = um produto da aba Controle Estabilidade)
+    estudos = {}
 
     for row in _iter_data_rows(ws, header_idx):
         prod = row[c_prod] if c_prod < len(row) else None
@@ -354,6 +423,42 @@ def _extract_estab_qualidade_prob(wb, today):
             # sentido como leitura de "tempo de entrega").
             acc["_entregas"].append(abs(delta))
 
+        # ---- status geral do estudo (nivel produto) ----
+        prod_key = str(prod).strip()
+        est_info = estudos.get(prod_key)
+        if est_info is None:
+            est_info = estudos[prod_key] = {
+                "produto": prod_key, "cliente": "", "status": "",
+                "_labs": set(), "_lotes": set(), "n_laudos": 0,
+                "n_recebidos": 0, "n_atrasados": 0,
+            }
+        est_info["n_laudos"] += 1
+        if recebido == "Sim":
+            est_info["n_recebidos"] += 1
+        if lab_norm:
+            est_info["_labs"].add(lab_norm)
+        if c_lote is not None and c_lote < len(row) and row[c_lote]:
+            est_info["_lotes"].add(str(row[c_lote]).strip())
+        if not est_info["cliente"] and c_cliente is not None and c_cliente < len(row) and row[c_cliente]:
+            est_info["cliente"] = normalize_name(row[c_cliente]) or ""
+        if not est_info["status"] and c_status_geral is not None and c_status_geral < len(row):
+            sg = row[c_status_geral]
+            if sg is not None and str(sg).strip():
+                est_info["status"] = str(sg).strip()
+
+        # ---- laudos atrasados ----
+        if recebido != "Sim" and prev_date and prev_date < today:
+            dias = (today - prev_date).days
+            est_info["n_atrasados"] += 1
+            atrasados.append({
+                "produto": prod_key,
+                "lab": lab_norm or "(sem laboratório)",
+                "tempo": str(tempo).strip() if tempo else "",
+                "lote": str(row[c_lote]).strip() if (c_lote is not None and c_lote < len(row) and row[c_lote]) else "",
+                "previsao": prev_date.isoformat(),
+                "dias_atraso": dias,
+            })
+
         if recebido != "Sim" and prev_date:
             proximos.append({
                 "produto": str(prod).strip(),
@@ -373,11 +478,64 @@ def _extract_estab_qualidade_prob(wb, today):
         for p in proximos[:15]
     ]
 
+    # ---- laudos atrasados ----
+    atrasados.sort(key=lambda a: a["dias_atraso"], reverse=True)
+    atraso_por_lab = Counter(a["lab"] for a in atrasados)
+    FAIXAS = ["1 a 30 dias", "31 a 60 dias", "61 a 90 dias", "mais de 90 dias"]
+
+    def _faixa(d):
+        if d <= 30:
+            return FAIXAS[0]
+        if d <= 60:
+            return FAIXAS[1]
+        if d <= 90:
+            return FAIXAS[2]
+        return FAIXAS[3]
+
+    atraso_por_faixa = Counter(_faixa(a["dias_atraso"]) for a in atrasados)
+    dias_list = [a["dias_atraso"] for a in atrasados]
+    laudos_atrasados = {
+        "total": len(atrasados),
+        "produtos": len({a["produto"] for a in atrasados}),
+        "media_dias": round(statistics.mean(dias_list), 1) if dias_list else 0.0,
+        "max_dias": max(dias_list) if dias_list else 0,
+        "por_lab": [[lab, n] for lab, n in atraso_por_lab.most_common()],
+        "faixas": [[f, atraso_por_faixa.get(f, 0)] for f in FAIXAS],
+        "lista": atrasados,
+        "referencia": today.isoformat(),
+    }
+
+    # ---- status geral de cada estudo ----
+    estudos_out = []
+    for info in estudos.values():
+        estudos_out.append({
+            "produto": info["produto"],
+            "cliente": info["cliente"],
+            "labs": sorted(info["_labs"]),
+            "lotes": sorted(info["_lotes"]),
+            "n_laudos": info["n_laudos"],
+            "n_recebidos": info["n_recebidos"],
+            "n_atrasados": info["n_atrasados"],
+            "status": info["status"],
+            "categoria": _cat_status_estudo(info["status"]),
+        })
+    ordem_idx = {c: i for i, c in enumerate(ORDEM_STATUS_ESTUDO)}
+    estudos_out.sort(key=lambda e: (ordem_idx.get(e["categoria"], 99), -e["n_atrasados"], e["produto"]))
+    cat_count = Counter(e["categoria"] for e in estudos_out)
+    status_estudos = {
+        "total": len(estudos_out),
+        "categorias": [[c, cat_count[c]] for c in ORDEM_STATUS_ESTUDO if cat_count.get(c)]
+                      + [[c, n] for c, n in cat_count.items() if c not in ordem_idx],
+        "lista": estudos_out,
+    }
+
     estab = {
         "tempos": dict(tempos),
         "proximos_laudos": proximos_out,
         # n_proximos = total de laudos aguardados (nao apenas os ~15 exibidos)
         "n_proximos": n_proximos_total,
+        "laudos_atrasados": laudos_atrasados,
+        "status_estudos": status_estudos,
     }
 
     qualidade_lab_out = {lab: dict(counter) for lab, counter in qualidade_lab.items()}
