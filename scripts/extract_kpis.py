@@ -507,7 +507,14 @@ def _extract_estab_qualidade_prob(wb, today):
 
     # ---- status geral de cada estudo ----
     estudos_out = []
+    n_sem_status = 0
     for info in estudos.values():
+        # Estudos com a coluna "Status Geral Estudo" em branco ficam fora do
+        # indicador (decisao da usuaria): sem status preenchido nao ha o que
+        # reportar, e eles distorciam a distribuicao por situacao.
+        if not info["status"]:
+            n_sem_status += 1
+            continue
         estudos_out.append({
             "produto": info["produto"],
             "cliente": info["cliente"],
@@ -524,6 +531,8 @@ def _extract_estab_qualidade_prob(wb, today):
     cat_count = Counter(e["categoria"] for e in estudos_out)
     status_estudos = {
         "total": len(estudos_out),
+        "ignorados_sem_status": n_sem_status,
+        "total_na_planilha": len(estudos),
         "categorias": [[c, cat_count[c]] for c in ORDEM_STATUS_ESTUDO if cat_count.get(c)]
                       + [[c, n] for c, n in cat_count.items() if c not in ordem_idx],
         "lista": estudos_out,
