@@ -26,6 +26,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from datetime import datetime
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -64,7 +65,11 @@ TOKEN_FILE = _resolve("DASH_TOKEN_PATH", TOKEN_REL, "/sessions/exciting-pensive-
 KPIS_JSON_PATH = os.path.join(SCRIPT_DIR, "kpis_all.json")
 
 GITHUB_REPO = "github.com/luanalante-byte/Dashboard-Regulat-rio.git"
-CLONE_DIR = "/tmp/dashboard_repo_autoupdate_v2"
+# Diretorio temporario do clone usado para o push. Usa um caminho unico por
+# execucao: um caminho fixo em /tmp quebrava quando a pasta sobrava de uma
+# execucao anterior feita por outro usuario do sistema (ex.: a tarefa
+# agendada), porque o rmtree batia em "Permission denied".
+CLONE_DIR = os.path.join(tempfile.mkdtemp(prefix="dashboard_repo_"), "repo")
 
 
 def log(msg):
@@ -127,7 +132,7 @@ def step_push_github(data):
     remote_url = f"https://{token}@{GITHUB_REPO}"
 
     if os.path.exists(CLONE_DIR):
-        shutil.rmtree(CLONE_DIR)
+        shutil.rmtree(CLONE_DIR, ignore_errors=True)
 
     log("Clonando repositorio...")
     run(["git", "clone", remote_url, CLONE_DIR])

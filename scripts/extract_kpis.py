@@ -17,6 +17,7 @@ Uso:
 
 import re
 import statistics
+import unicodedata
 from collections import defaultdict, Counter
 from datetime import datetime, date
 
@@ -171,35 +172,66 @@ def _extract_cotacoes(wb):
     c_sol = _col_index(header, "Solicitação")
     c_rec = _col_index(header, "Recebimento")
     c_val = _col_index(header, "Valor")
+    c_lab = _col_index(header, "Laboratório")
 
     status_count = Counter()
     valores_sum = defaultdict(float)
     leads = []
+    # quantidade de cotacoes por mes, pelo mes da Data de Solicitacao
+    por_mes = Counter()
+    por_mes_status = defaultdict(Counter)
+    por_mes_valor = defaultdict(float)
+    sem_data_sol = 0
 
     for row in _iter_data_rows(ws, header_idx):
         status = row[c_status] if c_status < len(row) else None
-        if status is None or str(status).strip() == "":
+        lab = row[c_lab] if c_lab < len(row) else None
+        d_sol = _to_date(row[c_sol]) if c_sol < len(row) else None
+        d_rec = _to_date(row[c_rec]) if c_rec < len(row) else None
+
+        # Uma linha vale como cotacao quando tem Data de Solicitacao ou
+        # Laboratorio preenchido. A coluna "Aprovado" em branco significa
+        # cotacao ainda sem decisao -> entra como "Pendente". Descartar essas
+        # linhas (comportamento antigo) esvaziava os meses mais recentes, que
+        # sao justamente os que ainda nao foram decididos.
+        if not d_sol and not (lab and str(lab).strip()):
             continue
-        status = str(status).strip()
+
+        if status is None or str(status).strip() == "":
+            status = "Pendente"
+        else:
+            status = str(status).strip()
         status_count[status] += 1
 
         val = _to_number(row[c_val]) if c_val < len(row) else None
         if val is not None:
             valores_sum[status] += val
-
-        d_sol = _to_date(row[c_sol]) if c_sol < len(row) else None
-        d_rec = _to_date(row[c_rec]) if c_rec < len(row) else None
+        if d_sol:
+            mkey_sol = _month_name(d_sol)
+            por_mes[mkey_sol] += 1
+            por_mes_status[mkey_sol][status] += 1
+            if val is not None:
+                por_mes_valor[mkey_sol] += val
+        else:
+            sem_data_sol += 1
         if d_sol and d_rec:
             delta = (d_rec - d_sol).days
             if 0 <= delta <= 365:
                 leads.append(delta)
 
     lead_medio = round(statistics.mean(leads), 2) if leads else 0.0
+    ordem_meses_cot = [m for m in MESES_PT_ACENTO if m in por_mes]
     return {
         "status": dict(status_count),
         "lead_medio_sol_rec": lead_medio,
         "lead_n": len(leads),
         "valores": {k: round(v, 2) for k, v in valores_sum.items()},
+        "por_mes": dict(por_mes),
+        "por_mes_status": {m: dict(c) for m, c in por_mes_status.items()},
+        "por_mes_valor": {m: round(v, 2) for m, v in por_mes_valor.items()},
+        "ordem_meses": ordem_meses_cot,
+        "sem_data_solicitacao": sem_data_sol,
+        "total": sum(status_count.values()),
     }
 
 
@@ -241,6 +273,58 @@ def _extract_fluxo(wb):
 # 3) Estabilidade (funil + proximos laudos) + qualidade_lab + prob_prod
 # --------------------------------------------------------------------------
 
+def _norm_txt(v):
+    """minusculas, sem acentos e sem espacos duplicados."""
+    t = unicodedata.normalize("NFKD", str(v or "")).encode("ascii", "ignore").decode()
+    return " ".join(t.lower().split())
+
+
+# Categorias usadas para agrupar a coluna livre "Status Geral Estudo" da aba
+# Controle Estabilidade. A ordem importa: o primeiro criterio que casar vence
+# (ex.: "notificado, aguardando laudo t12" cai em "Notificado, aguardando
+# laudo", nao em "Notificado").
+def _cat_status_estudo(texto):
+    n = _norm_txt(texto)
+    if not n:
+        return "Sem status preenchido"
+    if "cancelad" in n:
+        return "Cancelado"
+    if "reprovad" in n:
+        return "Reprovado"
+    if "conclu" in n:
+        return "Concluído"
+    if "notificad" in n and "aguardando" in n:
+        return "Notificado, aguardando laudo"
+    if "notificad" in n and "aprovad" not in n:
+        return "Notificado"
+    if "aprovad" in n and "notifica" in n:
+        return "Aprovado, seguir notificação"
+    if "aguardando retorno" in n or "questionamento" in n:
+        return "Aguardando retorno do laboratório"
+    if "aguardando laudo" in n or "aguardando t" in n:
+        return "Aguardando laudo"
+    if "revisar" in n or "verificar" in n or "analises internas" in n:
+        return "Pendência interna"
+    return "Outros"
+
+
+# Ordem de exibicao das categorias no dashboard (das mais criticas para as
+# resolvidas). Categorias novas que nao estejam aqui entram no fim.
+ORDEM_STATUS_ESTUDO = [
+    "Aguardando laudo",
+    "Aguardando retorno do laboratório",
+    "Notificado, aguardando laudo",
+    "Pendência interna",
+    "Aprovado, seguir notificação",
+    "Notificado",
+    "Concluído",
+    "Reprovado",
+    "Cancelado",
+    "Outros",
+    "Sem status preenchido",
+]
+
+
 def _extract_estab_qualidade_prob(wb, today):
     ws = wb["Controle Estabilidade "]
     header_idx, header = _find_header_row(
@@ -262,12 +346,28 @@ def _extract_estab_qualidade_prob(wb, today):
         c_inicio = _col_index(header, "Início de estudo")
     except ValueError:
         c_inicio = None
+    try:
+        c_lote = _col_index(header, "Lote")
+    except ValueError:
+        c_lote = None
+    try:
+        c_cliente = _col_index(header, "Cliente")
+    except ValueError:
+        c_cliente = None
+    try:
+        c_status_geral = _col_index(header, "Status Geral Estudo", "Status Geral Estudos")
+    except ValueError:
+        c_status_geral = None
 
     tempos = Counter()
     proximos = []
     qualidade_lab = defaultdict(Counter)
     lab_sla_acc = defaultdict(lambda: {"n_avaliados": 0, "n_atrasados": 0, "_entregas": []})
     seen_rows = set()
+    # laudos vencidos: previsao ja passou e o laudo ainda nao foi recebido
+    atrasados = []
+    # status geral por estudo (um estudo = um produto da aba Controle Estabilidade)
+    estudos = {}
 
     for row in _iter_data_rows(ws, header_idx):
         prod = row[c_prod] if c_prod < len(row) else None
@@ -323,6 +423,42 @@ def _extract_estab_qualidade_prob(wb, today):
             # sentido como leitura de "tempo de entrega").
             acc["_entregas"].append(abs(delta))
 
+        # ---- status geral do estudo (nivel produto) ----
+        prod_key = str(prod).strip()
+        est_info = estudos.get(prod_key)
+        if est_info is None:
+            est_info = estudos[prod_key] = {
+                "produto": prod_key, "cliente": "", "status": "",
+                "_labs": set(), "_lotes": set(), "n_laudos": 0,
+                "n_recebidos": 0, "n_atrasados": 0,
+            }
+        est_info["n_laudos"] += 1
+        if recebido == "Sim":
+            est_info["n_recebidos"] += 1
+        if lab_norm:
+            est_info["_labs"].add(lab_norm)
+        if c_lote is not None and c_lote < len(row) and row[c_lote]:
+            est_info["_lotes"].add(str(row[c_lote]).strip())
+        if not est_info["cliente"] and c_cliente is not None and c_cliente < len(row) and row[c_cliente]:
+            est_info["cliente"] = normalize_name(row[c_cliente]) or ""
+        if not est_info["status"] and c_status_geral is not None and c_status_geral < len(row):
+            sg = row[c_status_geral]
+            if sg is not None and str(sg).strip():
+                est_info["status"] = str(sg).strip()
+
+        # ---- laudos atrasados ----
+        if recebido != "Sim" and prev_date and prev_date < today:
+            dias = (today - prev_date).days
+            est_info["n_atrasados"] += 1
+            atrasados.append({
+                "produto": prod_key,
+                "lab": lab_norm or "(sem laboratório)",
+                "tempo": str(tempo).strip() if tempo else "",
+                "lote": str(row[c_lote]).strip() if (c_lote is not None and c_lote < len(row) and row[c_lote]) else "",
+                "previsao": prev_date.isoformat(),
+                "dias_atraso": dias,
+            })
+
         if recebido != "Sim" and prev_date:
             proximos.append({
                 "produto": str(prod).strip(),
@@ -342,11 +478,73 @@ def _extract_estab_qualidade_prob(wb, today):
         for p in proximos[:15]
     ]
 
+    # ---- laudos atrasados ----
+    atrasados.sort(key=lambda a: a["dias_atraso"], reverse=True)
+    atraso_por_lab = Counter(a["lab"] for a in atrasados)
+    FAIXAS = ["1 a 30 dias", "31 a 60 dias", "61 a 90 dias", "mais de 90 dias"]
+
+    def _faixa(d):
+        if d <= 30:
+            return FAIXAS[0]
+        if d <= 60:
+            return FAIXAS[1]
+        if d <= 90:
+            return FAIXAS[2]
+        return FAIXAS[3]
+
+    atraso_por_faixa = Counter(_faixa(a["dias_atraso"]) for a in atrasados)
+    dias_list = [a["dias_atraso"] for a in atrasados]
+    laudos_atrasados = {
+        "total": len(atrasados),
+        "produtos": len({a["produto"] for a in atrasados}),
+        "media_dias": round(statistics.mean(dias_list), 1) if dias_list else 0.0,
+        "max_dias": max(dias_list) if dias_list else 0,
+        "por_lab": [[lab, n] for lab, n in atraso_por_lab.most_common()],
+        "faixas": [[f, atraso_por_faixa.get(f, 0)] for f in FAIXAS],
+        "lista": atrasados,
+        "referencia": today.isoformat(),
+    }
+
+    # ---- status geral de cada estudo ----
+    estudos_out = []
+    n_sem_status = 0
+    for info in estudos.values():
+        # Estudos com a coluna "Status Geral Estudo" em branco ficam fora do
+        # indicador (decisao da usuaria): sem status preenchido nao ha o que
+        # reportar, e eles distorciam a distribuicao por situacao.
+        if not info["status"]:
+            n_sem_status += 1
+            continue
+        estudos_out.append({
+            "produto": info["produto"],
+            "cliente": info["cliente"],
+            "labs": sorted(info["_labs"]),
+            "lotes": sorted(info["_lotes"]),
+            "n_laudos": info["n_laudos"],
+            "n_recebidos": info["n_recebidos"],
+            "n_atrasados": info["n_atrasados"],
+            "status": info["status"],
+            "categoria": _cat_status_estudo(info["status"]),
+        })
+    ordem_idx = {c: i for i, c in enumerate(ORDEM_STATUS_ESTUDO)}
+    estudos_out.sort(key=lambda e: (ordem_idx.get(e["categoria"], 99), -e["n_atrasados"], e["produto"]))
+    cat_count = Counter(e["categoria"] for e in estudos_out)
+    status_estudos = {
+        "total": len(estudos_out),
+        "ignorados_sem_status": n_sem_status,
+        "total_na_planilha": len(estudos),
+        "categorias": [[c, cat_count[c]] for c in ORDEM_STATUS_ESTUDO if cat_count.get(c)]
+                      + [[c, n] for c, n in cat_count.items() if c not in ordem_idx],
+        "lista": estudos_out,
+    }
+
     estab = {
         "tempos": dict(tempos),
         "proximos_laudos": proximos_out,
         # n_proximos = total de laudos aguardados (nao apenas os ~15 exibidos)
         "n_proximos": n_proximos_total,
+        "laudos_atrasados": laudos_atrasados,
+        "status_estudos": status_estudos,
     }
 
     qualidade_lab_out = {lab: dict(counter) for lab, counter in qualidade_lab.items()}
@@ -523,6 +721,14 @@ def _extract_docs_and_revarte(wb):
 
     ordem_meses_arte = [m for m in MESES_PT_ACENTO if m in mes_buckets]
 
+    # totais mensais completos (o ranking_por_mes acima e truncado no top 25,
+    # entao nao serve para medir volume do mes)
+    revisoes_por_mes = {
+        m: sum(info["n"] for info in prod_dict.values())
+        for m, prod_dict in mes_buckets.items()
+    }
+    artes_por_mes = {m: len(prod_dict) for m, prod_dict in mes_buckets.items()}
+
     ranking_cliente = [
         {"nome": nome, "n_revisoes": n, "n_produtos": len(cliente_prod[nome])}
         for nome, n in cliente_counter.most_common()
@@ -546,6 +752,8 @@ def _extract_docs_and_revarte(wb):
         "ranking": ranking,
         "ranking_por_mes": ranking_por_mes,
         "ordem_meses": ordem_meses_arte,
+        "revisoes_por_mes": revisoes_por_mes,
+        "artes_por_mes": artes_por_mes,
         "ranking_cliente": ranking_cliente,
         "ranking_marca": ranking_marca,
     }
@@ -674,9 +882,37 @@ def _extract_notif_vig(wb):
         })
     por_produto_out.sort(key=lambda x: x["n_notificacoes"], reverse=True)
 
+    # Novas notificacoes por mes, pelo mes da Data de vigencia (YYYY-MM, pois a
+    # serie cobre mais de um ano). Registros sem data ficam fora da serie.
+    novas_mes = Counter()
+    sem_data_vig = 0
+    for item in lista:
+        dv = item.get("data_vigencia")
+        if dv:
+            novas_mes[dv[:7]] += 1
+        else:
+            sem_data_vig += 1
+    ordem_novas = sorted(novas_mes)
+    # preenche meses sem nenhuma notificacao para a serie nao "pular" periodos
+    if ordem_novas:
+        y0, m0 = (int(x) for x in ordem_novas[0].split("-"))
+        y1, m1 = (int(x) for x in ordem_novas[-1].split("-"))
+        completo = []
+        y, m = y0, m0
+        while (y, m) <= (y1, m1):
+            completo.append("%04d-%02d" % (y, m))
+            m += 1
+            if m > 12:
+                m = 1
+                y += 1
+        ordem_novas = completo
+
     return {
         "total": len(lista),
         "produtos": len(por_produto),
+        "novas_por_mes": dict(novas_mes),
+        "ordem_novas_meses": ordem_novas,
+        "sem_data_vigencia": sem_data_vig,
         "embalagem": _top_counter(embalagem_c, top=5),
         "marca": _top_counter(marca_c, top=11),
         "cliente": _top_counter(cliente_c, top=11),
