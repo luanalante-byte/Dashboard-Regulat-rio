@@ -146,9 +146,12 @@ def step_push_github(data):
 
     shutil.copy(DASHBOARD_HTML_PATH, os.path.join(CLONE_DIR, "dashboard", "index.html"))
     shutil.copy(KPIS_JSON_PATH, os.path.join(CLONE_DIR, "data", "kpis_all.json"))
-    shutil.copy(os.path.join(SCRIPT_DIR, "extract_kpis.py"), os.path.join(CLONE_DIR, "scripts", "extract_kpis.py"))
-    shutil.copy(os.path.join(SCRIPT_DIR, "inject_data.py"), os.path.join(CLONE_DIR, "scripts", "inject_data.py"))
-    shutil.copy(__file__, os.path.join(CLONE_DIR, "scripts", "update_dashboard.py"))
+    # ATENCAO: os scripts em scripts/*.py NAO sao mais copiados daqui para o
+    # repositorio. O repositorio e a fonte da verdade do codigo; cada execucao
+    # clona o repo e roda a versao commitada. Copiar de volta uma copia local
+    # possivelmente desatualizada ja reverteu o extract_kpis.py em 23/09/2026,
+    # apagando indicadores e deixando os graficos sem dados. Para publicar uma
+    # mudanca de codigo, comite o arquivo no repositorio de proposito.
 
     run(["git", "add", "-A"], cwd=CLONE_DIR)
     status = run(["git", "status", "--porcelain"], cwd=CLONE_DIR)
